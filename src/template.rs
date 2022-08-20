@@ -43,7 +43,7 @@ pub enum RenderError<'a> {
 }
 
 impl<'a> Template<'a> {
-    pub fn parse_str(s: &'a str) -> Result<Self, ParseError> {
+    pub fn parse_str(s: &'a str) -> Result<Self, ParseError> {      
         let mut tokens = Vec::new();
         let mut char_count = 1;
 
@@ -73,15 +73,15 @@ impl<'a> Template<'a> {
             }
         }
 
-        if let Some(start_str) = string_start_index {
+        if let Some(start_str) = string_start_index {            
             // Last string value
-            if start_str < char_count {
+            if start_str < char_count - 1 {
                 tokens.push(Token::String(String::from(&s[start_str..])));
             }
         } else if let Some(_) = variable_start_index {
             // Last value is a variable
             return Err(ParseError::UnclosedVariable);
-        } else if tokens.len() == 0 {
+        } else if tokens.len() == 0 && s.len() > 0 {
             tokens.push(Token::String(String::from(s)))
         }
 
@@ -117,12 +117,14 @@ impl<'a> Template<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::template::{ParseError, RenderError, Template, TemplateValue};
+    use super::{ParseError, RenderError, Template, TemplateValue};
     use std::collections::HashMap;
 
     #[test]
     fn string_without_variable() {
         let tpl = Template::parse_str("abcdef").unwrap();
+        assert_eq!(tpl.tokens.len(), 1);
+        
         let str = tpl.render(&HashMap::new()).unwrap();
         assert_eq!(str, "abcdef");
         let str = tpl.render(&HashMap::new()).unwrap();
@@ -138,6 +140,8 @@ mod tests {
     #[test]
     fn empty_string() {
         let tpl = Template::parse_str("").unwrap();
+        assert_eq!(tpl.tokens.len(), 0);
+
         let str = tpl.render(&HashMap::new()).unwrap();
         assert_eq!(str, "");
         let str = tpl.render(&HashMap::new()).unwrap();
@@ -147,6 +151,7 @@ mod tests {
     #[test]
     fn string() {
         let tpl = Template::parse_str(":date.day:/0:date.month:/:date.year:").unwrap();
+        assert_eq!(tpl.tokens.len(), 5);
 
         let mut hmap: HashMap<&str, &dyn TemplateValue> = HashMap::new();
         let year = 2022.to_string();
