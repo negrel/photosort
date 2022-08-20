@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::string::FromUtf8Error;
 
 use string_builder::Builder;
@@ -43,7 +44,7 @@ pub enum RenderError<'a> {
 }
 
 impl<'a> Template<'a> {
-    pub fn parse_str(s: &'a str) -> Result<Self, ParseError> {      
+    pub fn parse_str(s: &'a str) -> Result<Self, ParseError> {
         let mut tokens = Vec::new();
         let mut char_count = 1;
 
@@ -73,7 +74,7 @@ impl<'a> Template<'a> {
             }
         }
 
-        if let Some(start_str) = string_start_index {            
+        if let Some(start_str) = string_start_index {
             // Last string value
             if start_str < char_count - 1 {
                 tokens.push(Token::String(String::from(&s[start_str..])));
@@ -88,9 +89,9 @@ impl<'a> Template<'a> {
         Ok(Template::<'a> { tokens })
     }
 
-    pub fn render<'v>(
+    pub fn render<'v, T: BuildHasher>(
         &self,
-        variables: &HashMap<&str, &'v dyn TemplateValue>,
+        variables: &HashMap<&str, &'v dyn TemplateValue, T>,
     ) -> Result<String, RenderError> {
         let mut builder = Builder::default();
 
@@ -124,7 +125,7 @@ mod tests {
     fn string_without_variable() {
         let tpl = Template::parse_str("abcdef").unwrap();
         assert_eq!(tpl.tokens.len(), 1);
-        
+
         let str = tpl.render(&HashMap::new()).unwrap();
         assert_eq!(str, "abcdef");
         let str = tpl.render(&HashMap::new()).unwrap();
