@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum ReplicatorKind {
     #[serde(skip)]
     None,
@@ -50,7 +50,7 @@ pub trait Replicator {
 }
 
 pub struct ReplicatorChain<'a> {
-    pub chain: Vec<&'a dyn Replicator>,
+    chain: Vec<&'a dyn Replicator>,
 }
 
 impl<'a> ReplicatorChain<'a> {
@@ -59,14 +59,8 @@ impl<'a> ReplicatorChain<'a> {
     }
 }
 
-impl<'a> Default for ReplicatorChain<'a> {
-    fn default() -> Self {
-        Self::new(vec![&NoneReplicator {}])
-    }
-}
-
 impl<'a> Replicator for ReplicatorChain<'a> {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), std::io::Error> {
+    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
         for i in 0..self.chain.len() {
             let replicator = &self.chain[i];
 

@@ -3,6 +3,7 @@ use std::hash::BuildHasher;
 use std::string::FromUtf8Error;
 
 use string_builder::Builder;
+use thiserror::Error;
 
 pub trait TemplateValue {
     fn render(&self) -> String;
@@ -37,10 +38,13 @@ pub enum ParseError {
     UnclosedVariable,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum RenderError<'a> {
-    UndefinedVariable(&'a str),
-    BuildString(FromUtf8Error),
+#[derive(Error, Debug, PartialEq)]
+pub enum RenderError {
+    #[error("undefined variable {0:?}")]
+    UndefinedVariable(String),
+
+    #[error("failed to build string")]
+    BuildString(#[from] FromUtf8Error),
 }
 
 impl<'a> Template<'a> {
@@ -104,15 +108,13 @@ impl<'a> Template<'a> {
                     if let Some(value) = variables.get(name) {
                         builder.append(value.render());
                     } else {
-                        return Err(RenderError::UndefinedVariable(name));
+                        return Err(RenderError::UndefinedVariable(name.to_string()));
                     }
                 }
             }
         }
 
-        builder
-            .string()
-            .or_else(|err| Err(RenderError::BuildString(err)))
+        builder.string().map_err(|err| err.into())
     }
 }
 
@@ -188,7 +190,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err(),
-            RenderError::UndefinedVariable("destination")
+            RenderError::UndefinedVariable("destination".to_string())
         );
     }
 }
