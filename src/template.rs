@@ -1,23 +1,30 @@
 use std::collections::HashMap;
-use std::hash::BuildHasher;
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::string::FromUtf8Error;
 
-use string_builder::Builder;
 use thiserror::Error;
 
 pub trait TemplateValue {
-    fn render(&self) -> String;
+    fn render(&self) -> OsString;
 }
 
 impl TemplateValue for dyn ToString {
-    fn render(&self) -> String {
-        self.to_string()
+    fn render(&self) -> OsString {
+        self.to_string().render()
     }
 }
 
 impl TemplateValue for String {
-    fn render(&self) -> String {
-        self.to_owned()
+    fn render(&self) -> OsString {
+        OsString::from_str(self).unwrap()
+    }
+}
+
+impl TemplateValue for PathBuf {
+    fn render(&self) -> OsString {
+        self.clone().into_os_string()
     }
 }
 
@@ -32,13 +39,13 @@ enum Token<'a> {
     Variable(&'a str),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     UnamedVariable,
     UnclosedVariable,
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RenderError {
     #[error("undefined variable {0:?}")]
     UndefinedVariable(String),
@@ -83,30 +90,27 @@ impl<'a> Template<'a> {
             if start_str < char_count - 1 {
                 tokens.push(Token::String(String::from(&s[start_str..])));
             }
-        } else if let Some(_) = variable_start_index {
+        } else if variable_start_index.is_some() {
             // Last value is a variable
             return Err(ParseError::UnclosedVariable);
-        } else if tokens.len() == 0 && s.len() > 0 {
+        } else if tokens.is_empty() && !s.is_empty() {
             tokens.push(Token::String(String::from(s)))
         }
 
         Ok(Template::<'a> { tokens })
     }
 
-    pub fn render<'v, T: BuildHasher>(
-        &self,
-        variables: &HashMap<&str, &'v dyn TemplateValue, T>,
-    ) -> Result<String, RenderError> {
-        let mut builder = Builder::default();
+    pub fn render(&self, ctx: &dyn Context) -> Result<PathBuf, RenderError> {
+        let mut result = OsString::default();
 
         for i in 0..self.tokens.len() {
             let tk = &self.tokens[i];
 
             match tk {
-                Token::String(str) => builder.append(&str[..]),
+                Token::String(str) => result.push(&str[..]),
                 Token::Variable(name) => {
-                    if let Some(value) = variables.get(name) {
-                        builder.append(value.render());
+                    if let Some(value) = ctx.get(name) {
+                        result.push(value.render());
                     } else {
                         return Err(RenderError::UndefinedVariable(name.to_string()));
                     }
@@ -114,14 +118,14 @@ impl<'a> Template<'a> {
             }
         }
 
-        builder.string().map_err(|err| err.into())
+        Ok(PathBuf::from(result))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ParseError, RenderError, Template, TemplateValue};
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::PathBuf};
 
     #[test]
     fn string_without_variable() {
@@ -129,15 +133,15 @@ mod tests {
         assert_eq!(tpl.tokens.len(), 1);
 
         let str = tpl.render(&HashMap::new()).unwrap();
-        assert_eq!(str, "abcdef");
+        assert_eq!(str, PathBuf::from("abcdef"));
         let str = tpl.render(&HashMap::new()).unwrap();
-        assert_eq!(str, "abcdef");
+        assert_eq!(str, PathBuf::from("abcdef"));
 
         let mut hmap: HashMap<&str, &dyn TemplateValue> = HashMap::new();
         let unused_var = "Hello world".to_owned();
         hmap.insert("k", &unused_var);
         let str = tpl.render(&hmap).unwrap();
-        assert_eq!(str, "abcdef");
+        assert_eq!(str, PathBuf::from("abcdef"));
     }
 
     #[test]
@@ -146,29 +150,29 @@ mod tests {
         assert_eq!(tpl.tokens.len(), 0);
 
         let str = tpl.render(&HashMap::new()).unwrap();
-        assert_eq!(str, "");
+        assert_eq!(str, PathBuf::from(""));
         let str = tpl.render(&HashMap::new()).unwrap();
-        assert_eq!(str, "");
+        assert_eq!(str, PathBuf::from(""));
     }
 
     #[test]
     fn string() {
-        let tpl = Template::parse_str(":date.day:/0:date.month:/:date.year:").unwrap();
+        let tpl = Template::parse_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
         assert_eq!(tpl.tokens.len(), 5);
 
         let mut hmap: HashMap<&str, &dyn TemplateValue> = HashMap::new();
-        let year = 2022.to_string();
+        let year = "2022".to_string();
         hmap.insert("date.year", &year);
-        let month = 08.to_string();
+        let month = "08".to_string();
         hmap.insert("date.month", &month);
-        let day = 19.to_string();
+        let day = "19".to_string();
         hmap.insert("date.day", &day);
 
         let str = tpl.render(&hmap).unwrap();
-        assert_eq!(str, "19/08/2022");
+        assert_eq!(str, PathBuf::from("19/constant_prefix08/2022"));
 
         let str = tpl.render(&hmap).unwrap();
-        assert_eq!(str, "19/08/2022");
+        assert_eq!(str, PathBuf::from("19/constant_prefix08/2022"));
     }
 
     #[test]
@@ -192,5 +196,15 @@ mod tests {
             result.unwrap_err(),
             RenderError::UndefinedVariable("destination".to_string())
         );
+    }
+}
+
+pub trait Context {
+    fn get(&self, key: &str) -> Option<&&dyn TemplateValue>;
+}
+
+impl Context for HashMap<&str, &dyn TemplateValue> {
+    fn get(&self, key: &str) -> Option<&&dyn TemplateValue> {
+        self.get(key)
     }
 }
