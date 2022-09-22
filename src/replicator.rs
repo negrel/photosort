@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum ReplicatorKind {
     #[serde(skip)]
     None,
@@ -22,6 +22,8 @@ pub enum ReplicatorKind {
 
     #[serde(skip)]
     Chain,
+
+    Other(String),
 }
 
 impl fmt::Display for ReplicatorKind {
@@ -32,6 +34,7 @@ impl fmt::Display for ReplicatorKind {
             ReplicatorKind::HardLink => "hardlink",
             ReplicatorKind::SoftLink => "softlink",
             ReplicatorKind::Chain => "chain",
+            ReplicatorKind::Other(str) => str,
         };
 
         f.write_str(str)
@@ -45,32 +48,36 @@ pub struct ReplicatorConfig {
 }
 
 pub trait Replicator {
-    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error>;
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
 }
 
-pub struct ReplicatorChain<'a> {
-    chain: Vec<&'a dyn Replicator>,
+pub struct ReplicatorChain {
+    chain: Vec<Box<dyn Replicator>>,
 }
 
-impl<'a> ReplicatorChain<'a> {}
+impl ReplicatorChain {
+    pub fn new(mut chain: Vec<Box<dyn Replicator>>) -> Self {
+        if let Some(last) = chain.last() {
+            if last.kind() != ReplicatorKind::None {
+                chain.push(Box::new(NoneReplicator {}))
+            }
+        } else {
+            chain.push(Box::new(NoneReplicator {}))
+        }
 
-impl<'a> Replicator for ReplicatorChain<'a> {
-    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
+        Self { chain }
+    }
+}
+
+impl Replicator for ReplicatorChain {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
         for i in 0..self.chain.len() {
             let replicator = &self.chain[i];
 
             match replicator.replicate(src, dst) {
                 Ok(_) => return Ok(()),
                 Err(err) => {
-                    log::warn!(
-                        "using fallback replicator ({}) because an error occurred while replicating {} to {}: {}",
-                        replicator.kind(),
-                        src.display(),
-                        dst.display(),
-                        err
-                    );
-
                     // Last replicator failed, return the error
                     if i == self.chain.len() - 1 {
                         return Err(err);
@@ -87,6 +94,17 @@ impl<'a> Replicator for ReplicatorChain<'a> {
     }
 }
 
+impl Default for ReplicatorChain {
+    fn default() -> Self {
+        Self::new(vec![
+            Box::new(HardLinkReplicator {}),
+            Box::new(SoftLinkReplicator {}),
+            Box::new(CopyReplicator {}),
+            Box::new(NoneReplicator {}),
+        ])
+    }
+}
+
 #[derive(Default)]
 pub struct NoneReplicator {}
 
@@ -99,7 +117,7 @@ impl NoneReplicator {
 }
 
 impl Replicator for NoneReplicator {
-    fn replicate(&self, _src: &Path, _dst: &Path) -> Result<(), io::Error> {
+    fn replicate(&self, _src: &Path, _dst: &Path) -> io::Result<()> {
         log::error!("{}", NONE_REPLICATE_ERR_MSG);
         Err(self.replicate_error())
     }
@@ -113,7 +131,7 @@ impl Replicator for NoneReplicator {
 pub struct SoftLinkReplicator {}
 
 impl Replicator for SoftLinkReplicator {
-    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
         symlink_file(&src, &dst)
     }
 
@@ -126,7 +144,7 @@ impl Replicator for SoftLinkReplicator {
 pub struct HardLinkReplicator {}
 
 impl Replicator for HardLinkReplicator {
-    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
         fs::hard_link(src, dst)
     }
 
@@ -139,7 +157,7 @@ impl Replicator for HardLinkReplicator {
 pub struct CopyReplicator {}
 
 impl Replicator for CopyReplicator {
-    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
         match fs::copy(src, dst) {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
@@ -151,18 +169,38 @@ impl Replicator for CopyReplicator {
     }
 }
 
+struct MockReplicator<F>
+where
+    F: Fn(&Path, &Path) -> io::Result<()>,
+{
+    pub replicate_fn: F,
+}
+
+impl<F: Fn(&Path, &Path) -> io::Result<()>> Replicator for MockReplicator<F> {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
+        (self.replicate_fn)(src, dst)
+    }
+
+    fn kind(&self) -> ReplicatorKind {
+        ReplicatorKind::Other("mock".to_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
-    use std::fs;
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
+    use std::{fs, io};
 
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
 
+    use crate::replicator::NONE_REPLICATE_ERR_MSG;
+
     use super::{
-        CopyReplicator, HardLinkReplicator, NoneReplicator, Replicator, SoftLinkReplicator,
+        CopyReplicator, HardLinkReplicator, MockReplicator, NoneReplicator, Replicator,
+        ReplicatorChain, SoftLinkReplicator,
     };
     use uuid::Uuid;
 
@@ -198,6 +236,17 @@ mod tests {
         }
 
         src_content == dst_content
+    }
+
+    fn file_content_is(f: &Path, expected_content: &str) -> bool {
+        let mut file = fs::File::open(f).unwrap();
+        let mut actual_content = String::new();
+
+        file.read_to_string(&mut actual_content).unwrap();
+
+        println!("{:?}", actual_content);
+
+        actual_content == expected_content
     }
 
     #[test]
@@ -276,5 +325,59 @@ mod tests {
         teardown(&src, &dst);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn chain_replicator() {
+        let (src, dst) = setup();
+        let replicator = ReplicatorChain::new(vec![
+            Box::new(MockReplicator {
+                replicate_fn: |_src, dst| {
+                    if !dst.exists() {
+                        fs::write(dst, "foo")
+                    } else {
+                        Err(io::Error::new::<&str>(
+                            io::ErrorKind::Unsupported,
+                            "replictor1 error",
+                        ))
+                    }
+                },
+            }),
+            Box::new(MockReplicator {
+                replicate_fn: |_src, dst| {
+                    if !file_content_is(dst, "bar") {
+                        fs::write(dst, "bar")
+                    } else {
+                        Err(io::Error::new::<&str>(
+                            io::ErrorKind::Unsupported,
+                            "replictor2 error",
+                        ))
+                    }
+                }
+            }),
+        ]);
+        // first replicator should be called
+        let result = replicator.replicate(&src, &dst);
+        assert!(src.exists());
+        assert!(dst.exists());
+        assert!(file_content_is(&dst, "foo"));
+        assert!(result.is_ok());
+
+        // replicate again, this time 2nd replicator should be called
+        let result = replicator.replicate(&src, &dst);
+        assert!(src.exists());
+        assert!(dst.exists());
+        assert!(file_content_is(&dst, "bar"));
+        assert!(result.is_ok());
+
+        // replicate again, this time an error should be returned
+        let result = replicator.replicate(&src, &dst);
+        assert!(src.exists());
+        assert!(dst.exists());
+        assert!(file_content_is(&dst, "bar"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string() == NONE_REPLICATE_ERR_MSG);
+
+        teardown(&src, &dst);
     }
 }
