@@ -213,13 +213,13 @@ mod tests {
 }
 
 pub trait Context {
-    fn get(&self, key: &str) -> Option<&Box<dyn TemplateValue>>;
+    fn get(&self, key: &str) -> Option<&dyn TemplateValue>;
     fn insert(&mut self, key: String, value: Box<dyn TemplateValue>);
 }
 
 impl Context for HashMap<String, Box<dyn TemplateValue>> {
-    fn get(&self, key: &str) -> Option<&Box<dyn TemplateValue>> {
-        self.get(key)
+    fn get(&self, key: &str) -> Option<&dyn TemplateValue> {
+        self.get(key).map(|value| value.as_ref())
     }
 
     fn insert(&mut self, key: String, value: Box<dyn TemplateValue>) {

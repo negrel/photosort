@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
@@ -45,7 +45,7 @@ pub struct ReplicatorConfig {
 }
 
 pub trait Replicator {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error>;
+    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error>;
     fn kind(&self) -> ReplicatorKind;
 }
 
@@ -53,14 +53,10 @@ pub struct ReplicatorChain<'a> {
     chain: Vec<&'a dyn Replicator>,
 }
 
-impl<'a> ReplicatorChain<'a> {
-    pub fn new(chain: Vec<&'a dyn Replicator>) -> Self {
-        Self { chain }
-    }
-}
+impl<'a> ReplicatorChain<'a> {}
 
 impl<'a> Replicator for ReplicatorChain<'a> {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
         for i in 0..self.chain.len() {
             let replicator = &self.chain[i];
 
@@ -103,7 +99,7 @@ impl NoneReplicator {
 }
 
 impl Replicator for NoneReplicator {
-    fn replicate(&self, _src: &PathBuf, _dst: &PathBuf) -> Result<(), io::Error> {
+    fn replicate(&self, _src: &Path, _dst: &Path) -> Result<(), io::Error> {
         log::error!("{}", NONE_REPLICATE_ERR_MSG);
         Err(self.replicate_error())
     }
@@ -117,7 +113,7 @@ impl Replicator for NoneReplicator {
 pub struct SoftLinkReplicator {}
 
 impl Replicator for SoftLinkReplicator {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
         symlink_file(&src, &dst)
     }
 
@@ -130,7 +126,7 @@ impl Replicator for SoftLinkReplicator {
 pub struct HardLinkReplicator {}
 
 impl Replicator for HardLinkReplicator {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
         fs::hard_link(src, dst)
     }
 
@@ -143,7 +139,7 @@ impl Replicator for HardLinkReplicator {
 pub struct CopyReplicator {}
 
 impl Replicator for CopyReplicator {
-    fn replicate(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+    fn replicate(&self, src: &Path, dst: &Path) -> Result<(), io::Error> {
         match fs::copy(src, dst) {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
@@ -160,7 +156,7 @@ mod tests {
     use std::env::temp_dir;
     use std::fs;
     use std::io::{Read, Write};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
@@ -179,15 +175,15 @@ mod tests {
         let mut src_file = fs::File::create(&src).unwrap();
         writeln!(&mut src_file, "{}", Uuid::new_v4()).unwrap();
 
-        (PathBuf::from(src), PathBuf::from(dst))
+        (src, dst)
     }
 
-    fn teardown(src: &PathBuf, dst: &PathBuf) {
+    fn teardown(src: &Path, dst: &Path) {
         fs::remove_file(src).unwrap();
         fs::remove_file(dst).unwrap_or_default();
     }
 
-    fn file_content_eq(src: &PathBuf, dst: &PathBuf) -> bool {
+    fn file_content_eq(src: &Path, dst: &Path) -> bool {
         let mut src_file = fs::File::open(src).unwrap();
         let mut src_content = String::new();
         let mut dst_content = String::new();
