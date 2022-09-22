@@ -7,24 +7,36 @@ use std::string::FromUtf8Error;
 use thiserror::Error;
 
 pub trait TemplateValue {
-    fn render(&self) -> OsString;
+    fn render(&self, name: &str, ctx: &dyn Context) -> OsString;
 }
 
 impl TemplateValue for dyn ToString {
-    fn render(&self) -> OsString {
-        self.to_string().render()
+    fn render(&self, name: &str, ctx: &dyn Context) -> OsString {
+        self.to_string().render(name, ctx)
+    }
+}
+
+impl TemplateValue for &str {
+    fn render(&self, name: &str, ctx: &dyn Context) -> OsString {
+        self.to_owned().to_owned().render(name, ctx)
     }
 }
 
 impl TemplateValue for String {
-    fn render(&self) -> OsString {
+    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
         OsString::from_str(self).unwrap()
     }
 }
 
 impl TemplateValue for PathBuf {
-    fn render(&self) -> OsString {
+    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
         self.clone().into_os_string()
+    }
+}
+
+impl TemplateValue for OsString {
+    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
+        self.clone()
     }
 }
 
@@ -100,7 +112,7 @@ impl<'a> Template<'a> {
         Ok(Template::<'a> { tokens })
     }
 
-    pub fn render(&self, ctx: &dyn Context) -> Result<PathBuf, RenderError> {
+    pub fn render<T: Context>(&self, ctx: &T) -> Result<PathBuf, RenderError> {
         let mut result = OsString::default();
 
         for i in 0..self.tokens.len() {
@@ -110,7 +122,7 @@ impl<'a> Template<'a> {
                 Token::String(str) => result.push(&str[..]),
                 Token::Variable(name) => {
                     if let Some(value) = ctx.get(name) {
-                        result.push(value.render());
+                        result.push(value.render(name, ctx));
                     } else {
                         return Err(RenderError::UndefinedVariable(name.to_string()));
                     }
@@ -137,9 +149,9 @@ mod tests {
         let str = tpl.render(&HashMap::new()).unwrap();
         assert_eq!(str, PathBuf::from("abcdef"));
 
-        let mut hmap: HashMap<&str, &dyn TemplateValue> = HashMap::new();
+        let mut hmap: HashMap<String, Box<dyn TemplateValue>> = HashMap::new();
         let unused_var = "Hello world".to_owned();
-        hmap.insert("k", &unused_var);
+        hmap.insert("k".to_string(), Box::new(unused_var));
         let str = tpl.render(&hmap).unwrap();
         assert_eq!(str, PathBuf::from("abcdef"));
     }
@@ -157,16 +169,17 @@ mod tests {
 
     #[test]
     fn string() {
-        let tpl = Template::parse_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
+        let tpl =
+            Template::parse_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
         assert_eq!(tpl.tokens.len(), 5);
 
-        let mut hmap: HashMap<&str, &dyn TemplateValue> = HashMap::new();
-        let year = "2022".to_string();
-        hmap.insert("date.year", &year);
-        let month = "08".to_string();
-        hmap.insert("date.month", &month);
-        let day = "19".to_string();
-        hmap.insert("date.day", &day);
+        let mut hmap: HashMap<String, Box<dyn TemplateValue>> = HashMap::new();
+        let year = "2022";
+        hmap.insert("date.year".to_string(), Box::new(year));
+        let month = "08";
+        hmap.insert("date.month".to_string(), Box::new(month));
+        let day = "19";
+        hmap.insert("date.day".to_string(), Box::new(day));
 
         let str = tpl.render(&hmap).unwrap();
         assert_eq!(str, PathBuf::from("19/constant_prefix08/2022"));
@@ -200,11 +213,16 @@ mod tests {
 }
 
 pub trait Context {
-    fn get(&self, key: &str) -> Option<&&dyn TemplateValue>;
+    fn get(&self, key: &str) -> Option<&Box<dyn TemplateValue>>;
+    fn insert(&mut self, key: String, value: Box<dyn TemplateValue>);
 }
 
-impl Context for HashMap<&str, &dyn TemplateValue> {
-    fn get(&self, key: &str) -> Option<&&dyn TemplateValue> {
+impl Context for HashMap<String, Box<dyn TemplateValue>> {
+    fn get(&self, key: &str) -> Option<&Box<dyn TemplateValue>> {
         self.get(key)
+    }
+
+    fn insert(&mut self, key: String, value: Box<dyn TemplateValue>) {
+        self.insert(key, value);
     }
 }
