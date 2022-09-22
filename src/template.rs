@@ -40,21 +40,23 @@ impl TemplateValue for OsString {
     }
 }
 
-#[derive(Debug)]
-pub struct Template<'a> {
-    tokens: Vec<Token<'a>>,
+#[derive(Debug, Clone)]
+pub struct Template {
+    tokens: Vec<Token>,
 }
 
-#[derive(Debug)]
-enum Token<'a> {
+#[derive(Debug, Clone)]
+enum Token {
     String(String),
-    Variable(&'a str),
+    Variable(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParseError {
-    UnamedVariable,
-    UnclosedVariable,
+    #[error("unamed variable (at index {0})")]
+    UnamedVariable(usize),
+    #[error("unclosed variable (at index {0})")]
+    UnclosedVariable(usize),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -66,8 +68,8 @@ pub enum RenderError {
     BuildString(#[from] FromUtf8Error),
 }
 
-impl<'a> Template<'a> {
-    pub fn parse_str(s: &'a str) -> Result<Self, ParseError> {
+impl Template {
+    pub fn parse_str(s: &str) -> Result<Self, ParseError> {
         let mut tokens = Vec::new();
         let mut char_count = 1;
 
@@ -87,10 +89,10 @@ impl<'a> Template<'a> {
                     string_start_index = None;
                 } else if let Some(start_var) = variable_start_index {
                     if start_var == i {
-                        return Err(ParseError::UnamedVariable);
+                        return Err(ParseError::UnamedVariable(i));
                     }
 
-                    tokens.push(Token::Variable(&s[start_var..i]));
+                    tokens.push(Token::Variable(s[start_var..i].to_string()));
                     string_start_index = Some(i + 1);
                     variable_start_index = None;
                 }
@@ -104,12 +106,12 @@ impl<'a> Template<'a> {
             }
         } else if variable_start_index.is_some() {
             // Last value is a variable
-            return Err(ParseError::UnclosedVariable);
+            return Err(ParseError::UnclosedVariable(s.len() - 1));
         } else if tokens.is_empty() && !s.is_empty() {
             tokens.push(Token::String(String::from(s)))
         }
 
-        Ok(Template::<'a> { tokens })
+        Ok(Template { tokens })
     }
 
     pub fn render<T: Context>(&self, ctx: &T) -> Result<PathBuf, RenderError> {

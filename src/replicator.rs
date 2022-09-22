@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -6,7 +7,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, clap::ValueEnum, Clone, Copy, PartialEq, Eq)]
+#[clap(rename_all = "lowercase")]
 pub enum ReplicatorKind {
     #[serde(skip)]
     None,
@@ -22,8 +24,6 @@ pub enum ReplicatorKind {
 
     #[serde(skip)]
     Chain,
-
-    Other(String),
 }
 
 impl fmt::Display for ReplicatorKind {
@@ -34,10 +34,21 @@ impl fmt::Display for ReplicatorKind {
             ReplicatorKind::HardLink => "hardlink",
             ReplicatorKind::SoftLink => "softlink",
             ReplicatorKind::Chain => "chain",
-            ReplicatorKind::Other(str) => str,
         };
 
         f.write_str(str)
+    }
+}
+
+impl From<&OsStr> for ReplicatorKind {
+    fn from(str: &OsStr) -> Self {
+        match str.to_str().to_owned().unwrap() {
+            "copy" => ReplicatorKind::Copy,
+            "hardlink" => ReplicatorKind::HardLink,
+            "softlink" => ReplicatorKind::SoftLink,
+            "chain" => ReplicatorKind::Chain,
+            "none" | &_ => ReplicatorKind::None,
+        }
     }
 }
 
@@ -50,6 +61,33 @@ pub struct ReplicatorConfig {
 pub trait Replicator {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
+}
+
+impl From<ReplicatorKind> for Box<dyn Replicator> {
+    fn from(kind: ReplicatorKind) -> Self {
+        match kind {
+            ReplicatorKind::None => Box::new(NoneReplicator::default()),
+            ReplicatorKind::Copy => Box::new(CopyReplicator::default()),
+            ReplicatorKind::HardLink => Box::new(HardLinkReplicator::default()),
+            ReplicatorKind::SoftLink => Box::new(SoftLinkReplicator::default()),
+            ReplicatorKind::Chain => Box::new(ReplicatorChain::default()),
+        }
+    }
+}
+
+impl From<Vec<&ReplicatorKind>> for Box<dyn Replicator> {
+    fn from(vec: Vec<&ReplicatorKind>) -> Self {
+        if vec.len() == 1 {
+            return Box::from(vec[0].to_owned());
+        }
+
+        let chain: Vec<Box<dyn Replicator>> = vec
+            .iter()
+            .map(|kind| Box::<dyn Replicator>::from(kind.to_owned().to_owned()))
+            .collect();
+
+        Box::new(ReplicatorChain::new(chain))
+    }
 }
 
 pub struct ReplicatorChain {
@@ -182,7 +220,7 @@ impl<F: Fn(&Path, &Path) -> io::Result<()>> Replicator for MockReplicator<F> {
     }
 
     fn kind(&self) -> ReplicatorKind {
-        ReplicatorKind::Other("mock".to_owned())
+        ReplicatorKind::None
     }
 }
 
@@ -353,7 +391,7 @@ mod tests {
                             "replictor2 error",
                         ))
                     }
-                }
+                },
             }),
         ]);
         // first replicator should be called

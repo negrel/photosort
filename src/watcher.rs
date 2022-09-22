@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::sync::mpsc::channel;
 use std::{fs, io};
 
@@ -11,18 +11,18 @@ use thiserror::Error;
 use crate::replicator::Replicator;
 use crate::template::{Context, Template, TemplateValue};
 
-pub struct Watcher<'a> {
+pub struct Watcher {
     sources: Vec<PathBuf>,
-    template: Template<'a>,
-    replicator: &'a dyn Replicator,
+    template: Template,
+    replicator: Box<dyn Replicator>,
     overwrite: bool,
 }
 
-impl<'a> Watcher<'a> {
+impl Watcher {
     pub fn new(
         sources: Vec<PathBuf>,
-        template: Template<'a>,
-        replicator: &'a dyn Replicator,
+        template: Template,
+        replicator: Box<dyn Replicator>,
         overwrite: bool,
     ) -> Self {
         Watcher {
@@ -104,7 +104,7 @@ impl<'a> Watcher<'a> {
 
     fn handle_file_remove(&self, _event: &Event) {}
 
-    fn prepare_template_ctx(&self, ctx: &mut dyn Context, path: &'a PathBuf) {
+    fn prepare_template_ctx(&self, ctx: &mut dyn Context, path: &Path) {
         // filepath
         ctx.insert("file.path".to_owned(), Box::new(path.to_owned()));
 
