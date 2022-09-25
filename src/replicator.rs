@@ -58,7 +58,7 @@ pub struct ReplicatorConfig {
     fallback: ReplicatorKind,
 }
 
-pub trait Replicator {
+pub trait Replicator: fmt::Debug {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
 }
@@ -90,6 +90,7 @@ impl From<Vec<&ReplicatorKind>> for Box<dyn Replicator> {
     }
 }
 
+#[derive(Debug)]
 pub struct ReplicatorChain {
     chain: Vec<Box<dyn Replicator>>,
 }
@@ -116,6 +117,13 @@ impl Replicator for ReplicatorChain {
             match replicator.replicate(src, dst) {
                 Ok(_) => return Ok(()),
                 Err(err) => {
+                    log::warn!(
+                        "replicator error ({} {:?} -> {:?}): {}",
+                        replicator.kind(),
+                        src,
+                        dst,
+                        err
+                    );
                     // Last replicator failed, return the error
                     if i == self.chain.len() - 1 {
                         return Err(err);
@@ -143,7 +151,7 @@ impl Default for ReplicatorChain {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct NoneReplicator {}
 
 const NONE_REPLICATE_ERR_MSG: &str = "none replicator reached: replicate failed";
@@ -165,7 +173,7 @@ impl Replicator for NoneReplicator {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SoftLinkReplicator {}
 
 impl Replicator for SoftLinkReplicator {
@@ -178,7 +186,7 @@ impl Replicator for SoftLinkReplicator {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct HardLinkReplicator {}
 
 impl Replicator for HardLinkReplicator {
@@ -191,7 +199,7 @@ impl Replicator for HardLinkReplicator {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CopyReplicator {}
 
 impl Replicator for CopyReplicator {
@@ -207,6 +215,7 @@ impl Replicator for CopyReplicator {
     }
 }
 
+#[derive(Default)]
 struct MockReplicator<F>
 where
     F: Fn(&Path, &Path) -> io::Result<()>,
@@ -221,6 +230,12 @@ impl<F: Fn(&Path, &Path) -> io::Result<()>> Replicator for MockReplicator<F> {
 
     fn kind(&self) -> ReplicatorKind {
         ReplicatorKind::None
+    }
+}
+
+impl<F: Fn(&Path, &Path) -> io::Result<()>> fmt::Debug for MockReplicator<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("mock")
     }
 }
 

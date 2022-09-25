@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::{fs, io};
 
@@ -78,85 +78,16 @@ impl Watcher {
 
         let src_path = &event.paths[0];
 
-        // prepare template rendering context
-        let mut ctx: HashMap<String, Box<dyn TemplateValue>> = HashMap::default();
-        self.prepare_template_ctx(&mut ctx, src_path);
-
-        // render destination path template
-        let replicate_path = match self.template.render(&ctx) {
-            Ok(p) => p,
-            Err(err) => {
-                log::error!("failed to render template: {:?}", err);
-                return;
-            }
-        };
-
-        match self.replicate_file(src_path, &replicate_path) {
-            Ok(_) => {}
-            Err(err) => log::error!(
-                "an error occurred while replicating file {:?} to {:?}: {:?}",
-                src_path,
-                replicate_path,
-                err
-            ),
-        }
+        sort_file(
+            src_path,
+            &self.template,
+            self.replicator.as_ref(),
+            self.overwrite,
+        )
     }
 
     fn handle_file_remove(&self, _event: &Event) {}
-
-    fn prepare_template_ctx(&self, ctx: &mut dyn Context, path: &Path) {
-        // filepath
-        ctx.insert("file.path".to_owned(), Box::new(path.to_owned()));
-
-        // filename
-        match path.file_name() {
-            Some(fname) => ctx.insert("file.name".to_owned(), Box::new(fname.to_owned())),
-            None => {}
-        };
-
-        // file extension
-        match path.extension() {
-            Some(fext) => ctx.insert("file.extension".to_owned(), Box::new(fext.to_owned())),
-            None => {}
-        }
-    }
-
-    fn replicate_file(&self, src_path: &PathBuf, replicate_path: &PathBuf) -> io::Result<()> {
-        if replicate_path.exists() {
-            if self.overwrite {
-                log::info!(
-                    "removing {:?} file/directory to replicate {:?}",
-                    replicate_path,
-                    src_path
-                );
-                if replicate_path.is_dir() {
-                    fs::remove_dir_all(replicate_path)?
-                } else {
-                    fs::remove_file(replicate_path)?
-                }
-            } else {
-                log::warn!(
-                    "replicating file {:?} to {:?} will overwrite the latter, skipping it",
-                    src_path,
-                    replicate_path
-                );
-                return Ok(());
-            }
-        }
-
-        log::debug!("replicating {:?} to {:?}", src_path, replicate_path);
-
-        // Ensure parent directory exist
-        if let Some(parent) = replicate_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        self.replicator.replicate(src_path, replicate_path)?;
-        log::info!("file {:?} replicated to {:?}", src_path, replicate_path);
-        Ok(())
-    }
 }
-
 #[derive(Error)]
 pub enum WatcherError {
     #[error("failed to watch source directory {0:?}")]
@@ -180,4 +111,100 @@ fn error_chain_fmt(
         current = cause.source();
     }
     Ok(())
+}
+pub fn sort_file(
+    src_path: &PathBuf,
+    template: &Template,
+    replicator: &dyn Replicator,
+    overwrite: bool,
+) {
+    // prepare template rendering context
+    let mut ctx: HashMap<String, Box<dyn TemplateValue>> = HashMap::default();
+    prepare_template_ctx(&mut ctx, src_path);
+
+    // render destination path template
+    let replicate_path = match template.render(&ctx) {
+        Ok(p) => p,
+        Err(err) => {
+            log::error!("failed to render template: {:?}", err);
+            return;
+        }
+    };
+
+    match replicate_file(replicator, src_path, &replicate_path, overwrite) {
+        Ok(_) => {}
+        Err(err) => log::error!(
+            "an error occurred while replicating file {:?} to {:?}: {:?}",
+            src_path,
+            replicate_path,
+            err
+        ),
+    }
+}
+
+fn replicate_file(
+    replicator: &dyn Replicator,
+    src_path: &PathBuf,
+    replicate_path: &PathBuf,
+    overwrite: bool,
+) -> io::Result<()> {
+    if replicate_path.exists() {
+        if overwrite {
+            log::info!(
+                "removing {:?} file/directory to replicate {:?}",
+                replicate_path,
+                src_path
+            );
+            if replicate_path.is_dir() {
+                fs::remove_dir_all(replicate_path)?
+            } else {
+                fs::remove_file(replicate_path)?
+            }
+        } else {
+            log::warn!(
+                "replicating file {:?} to {:?} will overwrite the latter, skipping it",
+                src_path,
+                replicate_path
+            );
+            return Ok(());
+        }
+    }
+
+    log::debug!(
+        "replicating ({:?}) {:?} to {:?}",
+        replicator,
+        src_path,
+        replicate_path
+    );
+
+    // Ensure parent directory exist
+    if let Some(parent) = replicate_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    replicator.replicate(src_path, replicate_path)?;
+    log::info!("file {:?} replicated to {:?}", src_path, replicate_path);
+    Ok(())
+}
+
+fn prepare_template_ctx(ctx: &mut dyn Context, path: &Path) {
+    // filepath
+    ctx.insert("file.path".to_owned(), Box::new(path.to_owned()));
+
+    // filename
+    match path.file_name() {
+        Some(fname) => ctx.insert("file.name".to_owned(), Box::new(fname.to_owned())),
+        None => {}
+    };
+
+    match  path.file_stem() {
+        Some(fstem) => ctx.insert("file.stem".to_owned(), Box::new(fstem.to_owned())),
+        None => {}
+    }
+
+    // file extension
+    match path.extension() {
+        Some(fext) => ctx.insert("file.extension".to_owned(), Box::new(fext.to_owned())),
+        None => {}
+    }
 }
