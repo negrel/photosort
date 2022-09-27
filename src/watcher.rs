@@ -171,7 +171,7 @@ fn replicate_file(
     }
 
     log::debug!(
-        "replicating ({:?}) {:?} to {:?}",
+        "replicating ({}) {:?} to {:?}",
         replicator,
         src_path,
         replicate_path
@@ -197,7 +197,7 @@ fn prepare_template_ctx(ctx: &mut dyn Context, path: &Path) {
         None => {}
     };
 
-    match  path.file_stem() {
+    match path.file_stem() {
         Some(fstem) => ctx.insert("file.stem".to_owned(), Box::new(fstem.to_owned())),
         None => {}
     }

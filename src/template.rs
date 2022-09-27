@@ -193,13 +193,13 @@ mod tests {
     #[test]
     fn string_with_unclosed_variable_error() {
         let tpl = Template::parse_str(":date.day");
-        assert_eq!(tpl.unwrap_err(), ParseError::UnclosedVariable);
+        assert_eq!(tpl.unwrap_err(), ParseError::UnclosedVariable(8));
     }
 
     #[test]
     fn string_with_unnamed_variable_error() {
         let tpl = Template::parse_str("i'm going to :: next year");
-        assert_eq!(tpl.unwrap_err(), ParseError::UnamedVariable);
+        assert_eq!(tpl.unwrap_err(), ParseError::UnamedVariable(14));
     }
 
     #[test]

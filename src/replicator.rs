@@ -1,5 +1,7 @@
 use std::ffi::OsStr;
 use std::fmt;
+use std::fmt::Debug;
+use std::fmt::Display;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -21,19 +23,15 @@ pub enum ReplicatorKind {
 
     #[serde(rename = "softlink")]
     SoftLink,
-
-    #[serde(skip)]
-    Chain,
 }
 
-impl fmt::Display for ReplicatorKind {
+impl Display for ReplicatorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let str = match self {
             ReplicatorKind::None => "none",
             ReplicatorKind::Copy => "copy",
             ReplicatorKind::HardLink => "hardlink",
             ReplicatorKind::SoftLink => "softlink",
-            ReplicatorKind::Chain => "chain",
         };
 
         f.write_str(str)
@@ -46,7 +44,6 @@ impl From<&OsStr> for ReplicatorKind {
             "copy" => ReplicatorKind::Copy,
             "hardlink" => ReplicatorKind::HardLink,
             "softlink" => ReplicatorKind::SoftLink,
-            "chain" => ReplicatorKind::Chain,
             "none" | &_ => ReplicatorKind::None,
         }
     }
@@ -58,9 +55,21 @@ pub struct ReplicatorConfig {
     fallback: ReplicatorKind,
 }
 
-pub trait Replicator: fmt::Debug {
+pub trait Replicator {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
+}
+
+impl<'a> Display for dyn Replicator + 'a {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.kind(), f)
+    }
+}
+
+impl<'a> Debug for dyn Replicator + 'a {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.kind(), f)
+    }
 }
 
 impl From<ReplicatorKind> for Box<dyn Replicator> {
@@ -70,84 +79,78 @@ impl From<ReplicatorKind> for Box<dyn Replicator> {
             ReplicatorKind::Copy => Box::new(CopyReplicator::default()),
             ReplicatorKind::HardLink => Box::new(HardLinkReplicator::default()),
             ReplicatorKind::SoftLink => Box::new(SoftLinkReplicator::default()),
-            ReplicatorKind::Chain => Box::new(ReplicatorChain::default()),
         }
     }
 }
 
-impl From<Vec<&ReplicatorKind>> for Box<dyn Replicator> {
-    fn from(vec: Vec<&ReplicatorKind>) -> Self {
-        if vec.len() == 1 {
-            return Box::from(vec[0].to_owned());
-        }
-
-        let chain: Vec<Box<dyn Replicator>> = vec
-            .iter()
-            .map(|kind| Box::<dyn Replicator>::from(kind.to_owned().to_owned()))
-            .collect();
-
-        Box::new(ReplicatorChain::new(chain))
+impl FromIterator<ReplicatorKind> for Box<dyn Replicator> {
+    fn from_iter<T: IntoIterator<Item = ReplicatorKind>>(iter: T) -> Self {
+        Box::<dyn Replicator>::from_iter(
+            iter.into_iter()
+                .map(|kind| Box::<dyn Replicator>::from(kind)),
+        )
     }
 }
 
-#[derive(Debug)]
-pub struct ReplicatorChain {
-    chain: Vec<Box<dyn Replicator>>,
-}
-
-impl ReplicatorChain {
-    pub fn new(mut chain: Vec<Box<dyn Replicator>>) -> Self {
-        if let Some(last) = chain.last() {
-            if last.kind() != ReplicatorKind::None {
-                chain.push(Box::new(NoneReplicator {}))
-            }
+impl FromIterator<Box<dyn Replicator>> for Box<dyn Replicator> {
+    fn from_iter<T: IntoIterator<Item = Box<dyn Replicator>>>(iter: T) -> Self {
+        let mut iter = iter.into_iter();
+        let first = if let Some(next) = iter.next() {
+            next
         } else {
-            chain.push(Box::new(NoneReplicator {}))
-        }
+            return Box::new(NoneReplicator::default());
+        };
 
-        Self { chain }
+        Box::new(ReplicatorWithFallback::new(first, Box::from_iter(iter)))
     }
 }
 
-impl Replicator for ReplicatorChain {
-    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
-        for i in 0..self.chain.len() {
-            let replicator = &self.chain[i];
+pub struct ReplicatorWithFallback {
+    inner: Box<dyn Replicator>,
+    fallback: Box<dyn Replicator>,
+    on_error: Option<Box<dyn Fn(io::Error) -> ()>>,
+}
 
-            match replicator.replicate(src, dst) {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    log::warn!(
-                        "replicator error ({} {:?} -> {:?}): {}",
-                        replicator.kind(),
-                        src,
-                        dst,
-                        err
-                    );
-                    // Last replicator failed, return the error
-                    if i == self.chain.len() - 1 {
-                        return Err(err);
-                    }
+impl ReplicatorWithFallback {
+    pub fn new(inner: Box<dyn Replicator>, fallback: Box<dyn Replicator>) -> Self {
+        Self {
+            inner,
+            fallback,
+            on_error: None,
+        }
+    }
+
+    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error) -> ()>) {
+        self.on_error = Some(f);
+    }
+}
+
+impl Replicator for ReplicatorWithFallback {
+    fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
+        match self.inner.replicate(src, dst) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                eprintln!("replicator error: {}", err);
+                if let Some(err_handler) = &self.on_error {
+                    err_handler(err);
                 }
+                eprintln!("calling fallback: {}", self.fallback);
+                self.fallback.replicate(src, dst)
             }
         }
-
-        panic!("invalid replicator chain state: doesn't contains a NoneReplicator")
     }
 
     fn kind(&self) -> ReplicatorKind {
-        ReplicatorKind::Chain
+        return self.inner.kind();
     }
 }
 
-impl Default for ReplicatorChain {
-    fn default() -> Self {
-        Self::new(vec![
-            Box::new(HardLinkReplicator {}),
-            Box::new(SoftLinkReplicator {}),
-            Box::new(CopyReplicator {}),
-            Box::new(NoneReplicator {}),
-        ])
+impl Display for ReplicatorWithFallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.inner, f)?;
+        f.write_str(" -> ")?;
+        Display::fmt(&self.fallback, f)?;
+        Ok(())
     }
 }
 
@@ -233,7 +236,7 @@ impl<F: Fn(&Path, &Path) -> io::Result<()>> Replicator for MockReplicator<F> {
     }
 }
 
-impl<F: Fn(&Path, &Path) -> io::Result<()>> fmt::Debug for MockReplicator<F> {
+impl<F: Fn(&Path, &Path) -> io::Result<()>> Display for MockReplicator<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("mock")
     }
@@ -253,7 +256,7 @@ mod tests {
 
     use super::{
         CopyReplicator, HardLinkReplicator, MockReplicator, NoneReplicator, Replicator,
-        ReplicatorChain, SoftLinkReplicator,
+        SoftLinkReplicator,
     };
     use uuid::Uuid;
 
@@ -381,26 +384,30 @@ mod tests {
     }
 
     #[test]
-    fn chain_replicator() {
+    fn replicator_with_fallback() {
         let (src, dst) = setup();
-        let replicator = ReplicatorChain::new(vec![
+        let replicator = Box::<dyn Replicator>::from_iter(vec![
             Box::new(MockReplicator {
                 replicate_fn: |_src, dst| {
                     if !dst.exists() {
+                        eprintln!("hahah");
                         fs::write(dst, "foo")
                     } else {
+                        eprintln!("error 1");
                         Err(io::Error::new::<&str>(
                             io::ErrorKind::Unsupported,
                             "replictor1 error",
                         ))
                     }
                 },
-            }),
+            }) as Box<dyn Replicator>,
             Box::new(MockReplicator {
                 replicate_fn: |_src, dst| {
                     if !file_content_is(dst, "bar") {
+                        eprintln!("hohoho");
                         fs::write(dst, "bar")
                     } else {
+                        eprintln!("error 2");
                         Err(io::Error::new::<&str>(
                             io::ErrorKind::Unsupported,
                             "replictor2 error",
@@ -409,6 +416,9 @@ mod tests {
                 },
             }),
         ]);
+
+        eprintln!("replicator with fallback: {}", replicator);
+
         // first replicator should be called
         let result = replicator.replicate(&src, &dst);
         assert!(src.exists());
@@ -416,12 +426,15 @@ mod tests {
         assert!(file_content_is(&dst, "foo"));
         assert!(result.is_ok());
 
+        eprintln!("-----------------");
+
         // replicate again, this time 2nd replicator should be called
         let result = replicator.replicate(&src, &dst);
         assert!(src.exists());
         assert!(dst.exists());
         assert!(file_content_is(&dst, "bar"));
         assert!(result.is_ok());
+        eprintln!("-----------------");
 
         // replicate again, this time an error should be returned
         let result = replicator.replicate(&src, &dst);
@@ -430,6 +443,7 @@ mod tests {
         assert!(file_content_is(&dst, "bar"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string() == NONE_REPLICATE_ERR_MSG);
+        eprintln!("-----------------");
 
         teardown(&src, &dst);
     }

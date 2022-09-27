@@ -131,13 +131,12 @@ fn daemon_cmd(args: &ArgMatches) {
 }
 
 fn replicator_from_args(args: &ArgMatches) -> Box<dyn Replicator> {
-    let replicator: Vec<&ReplicatorKind> = args
-        .get_many::<ReplicatorKind>("replicator")
-        .unwrap()
-        .into_iter()
-        .collect();
-
-    Box::from(replicator)
+    Box::from_iter(
+        args.get_many::<ReplicatorKind>("replicator")
+            .unwrap()
+            .into_iter()
+            .map(|kind| kind.to_owned()),
+    )
 }
 
 fn sort_dir(src_path: &PathBuf, template: &Template, replicator: &dyn Replicator, overwrite: bool) {
