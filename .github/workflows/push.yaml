@@ -1,0 +1,24 @@
+name: push
+on:
+  push:
+    paths-ignore:
+      - ".gitignore"
+      - "LICENSE"
+      - ".github/images"
+      - "README.md"
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install earthly
+        uses: earthly/actions-setup@v1
+        with:
+          version: "v0.6.24"
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - run: printenv
+      - name: Run earthly +push target
+        run: earthly .github/+push
+
