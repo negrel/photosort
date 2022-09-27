@@ -49,12 +49,6 @@ impl From<&OsStr> for ReplicatorKind {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ReplicatorConfig {
-    kind: ReplicatorKind,
-    fallback: ReplicatorKind,
-}
-
 pub trait Replicator {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
@@ -130,11 +124,9 @@ impl Replicator for ReplicatorWithFallback {
         match self.inner.replicate(src, dst) {
             Ok(_) => Ok(()),
             Err(err) => {
-                eprintln!("replicator error: {}", err);
                 if let Some(err_handler) = &self.on_error {
                     err_handler(err);
                 }
-                eprintln!("calling fallback: {}", self.fallback);
                 self.fallback.replicate(src, dst)
             }
         }
@@ -167,7 +159,6 @@ impl NoneReplicator {
 
 impl Replicator for NoneReplicator {
     fn replicate(&self, _src: &Path, _dst: &Path) -> io::Result<()> {
-        log::error!("{}", NONE_REPLICATE_ERR_MSG);
         Err(self.replicate_error())
     }
 
@@ -300,8 +291,6 @@ mod tests {
 
         file.read_to_string(&mut actual_content).unwrap();
 
-        println!("{:?}", actual_content);
-
         actual_content == expected_content
     }
 
@@ -390,10 +379,8 @@ mod tests {
             Box::new(MockReplicator {
                 replicate_fn: |_src, dst| {
                     if !dst.exists() {
-                        eprintln!("hahah");
                         fs::write(dst, "foo")
                     } else {
-                        eprintln!("error 1");
                         Err(io::Error::new::<&str>(
                             io::ErrorKind::Unsupported,
                             "replictor1 error",
@@ -404,10 +391,8 @@ mod tests {
             Box::new(MockReplicator {
                 replicate_fn: |_src, dst| {
                     if !file_content_is(dst, "bar") {
-                        eprintln!("hohoho");
                         fs::write(dst, "bar")
                     } else {
-                        eprintln!("error 2");
                         Err(io::Error::new::<&str>(
                             io::ErrorKind::Unsupported,
                             "replictor2 error",
@@ -417,8 +402,6 @@ mod tests {
             }),
         ]);
 
-        eprintln!("replicator with fallback: {}", replicator);
-
         // first replicator should be called
         let result = replicator.replicate(&src, &dst);
         assert!(src.exists());
@@ -426,15 +409,12 @@ mod tests {
         assert!(file_content_is(&dst, "foo"));
         assert!(result.is_ok());
 
-        eprintln!("-----------------");
-
         // replicate again, this time 2nd replicator should be called
         let result = replicator.replicate(&src, &dst);
         assert!(src.exists());
         assert!(dst.exists());
         assert!(file_content_is(&dst, "bar"));
         assert!(result.is_ok());
-        eprintln!("-----------------");
 
         // replicate again, this time an error should be returned
         let result = replicator.replicate(&src, &dst);
@@ -443,7 +423,6 @@ mod tests {
         assert!(file_content_is(&dst, "bar"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string() == NONE_REPLICATE_ERR_MSG);
-        eprintln!("-----------------");
 
         teardown(&src, &dst);
     }
