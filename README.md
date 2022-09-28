@@ -35,7 +35,7 @@ photosort sort -r hardlink -r softlink "/path/to/dst/:file.name:" /path/to/src1 
 
 Watch directories and sort them as new files are added:
 ```shell
-photosort daemon -r hardlink "/path/to/dst/:file.name:" /path/to/src1 /path/to/src2
+photosort daemon -r hardlink -r copy "/path/to/dst/:file.name:" /path/to/src1 /path/to/src2 ...
 ```
 
 ## Contributing
@@ -49,7 +49,7 @@ me at [negrel.dev@protonmail.com](mailto:negrel.dev@protonmail.com), open an
 
 Please give a :star: if this project helped you!
 
-[![buy me a coffee](.github/bmc-button.png)](https://www.buymeacoffee.com/negrel)
+[![buy me a coffee](.github/images/bmc-button.png)](https://www.buymeacoffee.com/negrel)
 
 ## :scroll: License
 
