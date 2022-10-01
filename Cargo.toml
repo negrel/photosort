@@ -2,6 +2,7 @@
 name = "photosort"
 version = "0.1.0"
 edition = "2021"
+authors = ["Alexandre Negrel <negrel.dev@protonmail.com>"]
 
 [profile.release]
 strip = true
@@ -22,7 +23,7 @@ symlink = "0.1.0" # Cross-platform symlink
 serde = { version = "1.0.143", features = ["derive"] } # Serialization & deserialization
 thiserror = "1.0"
 notify = "5.0"
-clap = { version = "3.2", features = ["derive", "cargo"] }
+clap = { version = "4.0", features = ["derive", "cargo"] }
 
 [dev-dependencies]
 uuid = { version = "1.1.2", features = ["v4"] }

@@ -1,15 +1,10 @@
-use clap::{builder::TypedValueParser, ErrorKind};
+use clap::builder::TypedValueParser;
+use clap::error::ErrorKind;
 
 use crate::template::Template;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TemplateParser {}
-
-impl TemplateParser {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
 
 impl TypedValueParser for TemplateParser {
     type Value = Template;

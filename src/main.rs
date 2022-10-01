@@ -2,16 +2,21 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use clap::builder::{BoolValueParser, EnumValueParser, PathBufValueParser};
-use clap::{crate_name, App, Arg, ArgMatches, Command};
+use args::Command;
+use args::CommonArgs;
+use args::SortCmd;
+use args::WatchCmd;
+use clap::Parser;
 use env_logger::Env;
 use replicator::Replicator;
 use template::Template;
 use watcher::{sort_file, Watcher};
 
+use crate::args::Cli;
 use crate::replicator::ReplicatorKind;
 use crate::value_parser::TemplateParser;
 
+mod args;
 mod replicator;
 mod template;
 mod value_parser;
@@ -20,123 +25,47 @@ mod watcher;
 pub fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let template_arg = Arg::new("template")
-        .help("template string used to sort file")
-        .required(true)
-        .number_of_values(1)
-        .multiple_values(false)
-        .value_parser(TemplateParser::new());
+    let cli = Cli::parse();
 
-    let source_args = Arg::new("source")
-        .help("source(s) directory/file to sort")
-        .required(true)
-        .multiple_values(true)
-        .value_parser(PathBufValueParser::new());
-
-    let replicator_args = Arg::new("replicator")
-        .help("the kind of replicator to use (copy, hardlink, softlink)")
-        .long_help("the kind of replicator to use, if more than one replicator is specified others will be used as fallback")
-        .short('r')
-        .value_parser(EnumValueParser::<ReplicatorKind>::new())
-        .default_values(&["hardlink", "softlink", "copy"])
-        .multiple_occurrences(true);
-
-    let overwrite_arg = Arg::new("overwrite")
-        .help("overwrite replicated file if it already exist")
-        .short('o')
-        .action(clap::ArgAction::SetTrue)
-        .value_parser(BoolValueParser::new());
-
-    let app = App::new(crate_name!())
-        .about("A pictures/file organizer")
-        .version("0.1.0")
-        .author("Alexandre Negrel <negrel.dev@protonmail.com>")
-        .subcommand_required(true)
-        .subcommand(
-            Command::new("sort")
-                .about("Sort all files once")
-                .arg(overwrite_arg.clone())
-                .arg(template_arg.clone())
-                .arg(source_args.clone())
-                .arg(replicator_args.clone()),
-        )
-        .subcommand(
-            Command::new("daemon")
-                .about("Daemon that watch & sort files as their added/removed")
-                .arg(
-                    Arg::new("config")
-                        .help("path to daemon configuration file [UNIMPLEMENTED]")
-                        .short('c')
-                        .exclusive(true)
-                        .number_of_values(1)
-                        .value_parser(PathBufValueParser::new()),
-                )
-                .arg(overwrite_arg.clone())
-                .arg(template_arg.clone())
-                .arg(source_args.clone())
-                .arg(replicator_args.clone()),
-        );
-
-    let matches = app.get_matches();
-
-    match matches.subcommand() {
-        Some(("daemon", args)) => daemon_cmd(args),
-        Some(("sort", args)) => sort_cmd(args),
-        None => unreachable!(),
-        _ => panic!("unexpected input, please report a bug"),
+    match cli.command {
+        Command::Sort(args) => sort_cmd(args),
+        Command::Watch(args) => watch_cmd(args),
     }
 }
 
-fn sort_cmd(args: &ArgMatches) {
-    let sources: Vec<PathBuf> = args
-        .get_many::<PathBuf>("source")
-        .unwrap()
-        .into_iter()
-        .map(|pbuf| pbuf.to_owned())
-        .collect();
+fn sort_cmd(args: SortCmd) {
+    let args = match args.common {
+        CommonArgs::Cli(args) => args,
+        CommonArgs::Config(_args) => unimplemented!("config file is not supported for the moment"),
+    };
 
-    let replicator = replicator_from_args(args);
-    let template = args.get_one::<Template>("template").unwrap();
-    let overwrite = args.get_one::<bool>("overwrite").unwrap();
+    let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
 
-    for src in sources {
+    for src in args.sources {
         if src.is_dir() {
-            sort_dir(&src, template, replicator.as_ref(), *overwrite)
+            sort_dir(&src, &args.template, replicator.as_ref(), args.overwrite)
         } else {
-            sort_file(&src, template, replicator.as_ref(), *overwrite);
+            sort_file(&src, &args.template, replicator.as_ref(), args.overwrite);
         }
     }
 }
 
-fn daemon_cmd(args: &ArgMatches) {
-    if let Some(_config_file) = args.get_one::<PathBuf>("config") {
-        unimplemented!("config file")
+fn watch_cmd(watch_args: WatchCmd) {
+    let args = match watch_args.common {
+        CommonArgs::Cli(args) => args,
+        CommonArgs::Config(_args) => unimplemented!("config file is not supported for the moment"),
+    };
+
+    if watch_args.daemon {
+        unimplemented!("daemon mode is not supported for the moment")
     }
 
-    let sources: Vec<PathBuf> = args
-        .get_many::<PathBuf>("source")
-        .unwrap()
-        .into_iter()
-        .map(|pbuf| pbuf.to_owned())
-        .collect();
+    let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
 
-    let replicator = replicator_from_args(args);
-    let template = args.get_one::<Template>("template").unwrap();
-    let overwrite = args.get_one::<bool>("overwrite").unwrap();
-
-    match Watcher::new(sources, template.to_owned(), replicator, *overwrite).start() {
+    match Watcher::new(args.sources, args.template, replicator, args.overwrite).start() {
         Ok(_) => {}
         Err(err) => log::error!("an error occurred while running in daemon mode: {}", err),
     }
-}
-
-fn replicator_from_args(args: &ArgMatches) -> Box<dyn Replicator> {
-    Box::from_iter(
-        args.get_many::<ReplicatorKind>("replicator")
-            .unwrap()
-            .into_iter()
-            .map(|kind| kind.to_owned()),
-    )
 }
 
 fn sort_dir(src_path: &PathBuf, template: &Template, replicator: &dyn Replicator, overwrite: bool) {
