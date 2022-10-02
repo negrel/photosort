@@ -2,8 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::result;
+
+use thiserror::Error;
 
 use crate::replicator::Replicator;
+use crate::template;
 use crate::template::{Context, Template, TemplateValue};
 
 #[derive(Debug)]
@@ -23,6 +27,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct Sorter {
     cfg: Config,
 }
@@ -32,93 +37,63 @@ impl Sorter {
         Self { cfg }
     }
 
-    pub fn sort_dir(&self, src_path: &PathBuf) {
-        log::debug!("sorting directory {:?}", src_path);
-
-        // create iterator
-        let dir_iter: Vec<io::Result<fs::DirEntry>> = match fs::read_dir(src_path) {
-            Ok(read_dir) => read_dir.collect(),
-            Err(err) => {
-                log::error!("failed to walk directory {:?}: {}", src_path, err);
-                return;
-            }
-        };
-
-        // iterate over files in src_path
-        for dir_entry in dir_iter.into_iter().rev() {
-            match dir_entry {
-                Ok(entry) => {
-                    let path = entry.path();
-
-                    if path.is_dir() {
-                        self.sort_dir(&path);
-                    } else {
-                        self.sort_file(&path);
-                    }
-                }
-                Err(err) => log::error!("failed to walk directory {:?}: {}", src_path, err),
-            }
-        }
-
-        log::debug!("directory {:?} sorted", src_path);
-    }
-
-    pub fn sort_file(&self, src_path: &Path) {
+    pub fn sort_file(&self, src_path: &Path) -> Result {
         // prepare template rendering context
         let mut ctx: HashMap<String, Box<dyn TemplateValue>> = HashMap::default();
-        Self::prepare_template_ctx(&mut ctx, &src_path);
+        Self::prepare_template_ctx(&mut ctx, src_path);
 
         // render destination path template
         let replicate_path = match self.cfg.template.render(&ctx) {
-            Ok(p) => p,
-            Err(err) => {
-                log::error!("failed to render template: {:?}", err);
-                return;
-            }
+            Ok(path) => path,
+            Err(err) => return Err(SortError::TemplateError(err)),
         };
 
-        match self.replicate_file(src_path, &replicate_path) {
-            Ok(_) => {}
-            Err(err) => log::error!(
-                "an error occurred while replicating file {:?} to {:?}: {:?}",
-                src_path,
-                replicate_path,
-                err
-            ),
-        }
+        self.replicate_file(src_path, replicate_path)
     }
 
-    fn replicate_file(&self, src_path: &Path, replicate_path: &PathBuf) -> io::Result<()> {
+    fn replicate_file(&self, src_path: &Path, replicate_path: PathBuf) -> Result {
+        // TODO canonicalize src and replicate path
+        if replicate_path == src_path {
+            return Ok(SortResult::Skipped {
+                replicate_path,
+                reason: SkippedReason::SameFile,
+            });
+        }
+
+        let mut overwrite = false;
         if replicate_path.exists() {
             if self.cfg.overwrite {
-                log::info!(
-                    "removing {:?} file/directory to replicate {:?}",
-                    replicate_path,
-                    src_path
-                );
+                overwrite = true;
                 if replicate_path.is_dir() {
-                    fs::remove_dir_all(replicate_path)?
-                } else {
-                    fs::remove_file(replicate_path)?
+                    if let Err(err) = fs::remove_dir_all(&replicate_path) {
+                        return Err(SortError::OverwriteError(err, replicate_path));
+                    };
+                } else if let Err(err) = fs::remove_file(&replicate_path) {
+                    return Err(SortError::OverwriteError(err, replicate_path));
                 }
             } else {
-                log::warn!(
-                    "replicating file {:?} to {:?} will overwrite the latter, skipping it",
-                    src_path,
-                    replicate_path
-                );
-                return Ok(());
+                return Ok(SortResult::Skipped {
+                    replicate_path,
+                    reason: SkippedReason::Overwrite,
+                });
             }
         }
 
         // Ensure parent directory exist
         if let Some(parent) = replicate_path.parent() {
-            fs::create_dir_all(parent)?;
+            if let Err(err) = fs::create_dir_all(parent) {
+                return Err(SortError::ReplicateError(err, replicate_path));
+            };
         }
 
-        self.cfg.replicator.replicate(src_path, replicate_path)?;
-        log::info!("file {:?} replicated to {:?}", src_path, replicate_path);
-        Ok(())
+        if let Err(err) = self.cfg.replicator.replicate(src_path, &replicate_path) {
+            return Err(SortError::ReplicateError(err, replicate_path));
+        }
+
+        Ok(SortResult::Replicated {
+            replicate_path,
+            overwrite,
+        })
     }
 
     fn prepare_template_ctx(ctx: &mut dyn Context, path: &Path) {
@@ -126,20 +101,189 @@ impl Sorter {
         ctx.insert("file.path".to_owned(), Box::new(path.to_owned()));
 
         // filename
-        match path.file_name() {
-            Some(fname) => ctx.insert("file.name".to_owned(), Box::new(fname.to_owned())),
-            None => {}
+        if let Some(fname) = path.file_name() {
+            ctx.insert("file.name".to_owned(), Box::new(fname.to_owned()));
         };
 
-        match path.file_stem() {
-            Some(fstem) => ctx.insert("file.stem".to_owned(), Box::new(fstem.to_owned())),
-            None => {}
+        if let Some(fstem) = path.file_stem() {
+            ctx.insert("file.stem".to_owned(), Box::new(fstem.to_owned()));
         }
 
         // file extension
-        match path.extension() {
-            Some(fext) => ctx.insert("file.extension".to_owned(), Box::new(fext.to_owned())),
-            None => {}
+        if let Some(fext) = path.extension() {
+            ctx.insert("file.extension".to_owned(), Box::new(fext.to_owned()));
         }
+    }
+}
+
+pub type Result = result::Result<SortResult, SortError>;
+
+#[derive(Debug)]
+pub enum SortResult {
+    /// File wasn't replicated because overwrite is disabled or source path
+    /// is same as replicate path.
+    Skipped {
+        replicate_path: PathBuf,
+        reason: SkippedReason,
+    },
+
+    /// File was replicated.
+    Replicated {
+        replicate_path: PathBuf,
+        /// A file was overwritten to replicate this file
+        overwrite: bool,
+    },
+}
+
+#[derive(Error, Debug)]
+pub enum SortError {
+    #[error("failed to render file path template: {0}")]
+    TemplateError(#[source] template::RenderError),
+
+    #[error("failed to replicate file to {1:?}: {0}")]
+    ReplicateError(#[source] io::Error, PathBuf),
+
+    #[error("failed to overwrite destination file {1:?}: {0}")]
+    OverwriteError(#[source] io::Error, PathBuf),
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum SkippedReason {
+    #[error("can't overwrite replicate file")]
+    Overwrite,
+
+    #[error("source and replicate paths are the same")]
+    SameFile,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::{env, io};
+
+    use crate::sort::SkippedReason;
+    use crate::{
+        replicator::{NoneReplicator, SoftLinkReplicator},
+        template::{self, Template},
+    };
+
+    use super::{SortError, Sorter};
+
+    #[test]
+    fn template_error() {
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(":inexistent.variable:").unwrap(),
+            replicator: Box::new(NoneReplicator::default()),
+            overwrite: false,
+        });
+
+        let result = sorter.sort_file(&PathBuf::from("/dev/null"));
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err = match err {
+            SortError::TemplateError(err) => err,
+            _ => panic!("{} is not of type TemplateError", err),
+        };
+
+        assert_eq!(
+            err,
+            template::RenderError::UndefinedVariable("inexistent.variable".to_owned()),
+        );
+    }
+
+    #[test]
+    fn replicate_error() {
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(":file.path:2").unwrap(),
+            replicator: Box::new(NoneReplicator::default()),
+            overwrite: false,
+        });
+
+        let result = sorter.sort_file(&PathBuf::from("/dev/null"));
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let (err, dest_path) = match err {
+            SortError::ReplicateError(err, dest_path) => (err, dest_path),
+            _ => panic!("expected error of type ReplicateError, got \"{}\"", err),
+        };
+
+        assert_eq!(dest_path, PathBuf::from("/dev/null2"));
+        assert_eq!(err.kind(), NoneReplicator::replicate_error().kind());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwrite_error() {
+        let src_path = PathBuf::from("/proc/self/stat");
+
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(":file.path:us").unwrap(),
+            replicator: Box::new(SoftLinkReplicator::default()),
+            overwrite: true,
+        });
+
+        let result = sorter.sort_file(&src_path);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let (err, dest_path) = match err {
+            SortError::OverwriteError(err, dest_path) => (err, dest_path),
+            _ => panic!("expected error of type OverwriteError, got \"{}\"", err),
+        };
+
+        assert_eq!(dest_path, PathBuf::from("/proc/self/status"));
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn skipped_source_and_destination_are_same() {
+        let src_path = PathBuf::from(env::args().next().unwrap());
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(src_path.to_str().unwrap()).unwrap(),
+            replicator: Box::new(SoftLinkReplicator::default()),
+            overwrite: true,
+        });
+
+        let result = sorter.sort_file(&src_path);
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let (replicate_path, skip_reason) = match result {
+            crate::sort::SortResult::Skipped {
+                replicate_path,
+                reason,
+            } => (replicate_path, reason),
+            _ => panic!("expected sort result of type Skipped, got \"{:?}\"", result),
+        };
+
+        assert_eq!(replicate_path, src_path);
+        assert_eq!(skip_reason, SkippedReason::SameFile);
+    }
+
+    #[test]
+    fn skipped_overwrite_disabled() {
+        let src_path = PathBuf::from(env::args().next().unwrap());
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(src_path.to_str().unwrap()).unwrap(),
+            replicator: Box::new(SoftLinkReplicator::default()),
+            overwrite: true,
+        });
+
+        let result = sorter.sort_file(&src_path);
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let (replicate_path, skip_reason) = match result {
+            crate::sort::SortResult::Skipped {
+                replicate_path,
+                reason,
+            } => (replicate_path, reason),
+            _ => panic!("expected sort result of type Skipped, got \"{:?}\"", result),
+        };
+
+        assert_eq!(replicate_path, src_path);
+        assert_eq!(skip_reason, SkippedReason::SameFile);
     }
 }

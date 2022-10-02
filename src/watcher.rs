@@ -22,9 +22,7 @@ impl Watcher {
         let (tx, rx) = channel();
         let mut watcher = notify::recommended_watcher(tx).unwrap();
 
-        log::info!("start watching events");
         for src in &self.sources {
-            log::debug!("watching source directory {:?}", src);
             watcher
                 .watch(src, RecursiveMode::Recursive)
                 .map_err(|err| WatcherError::WatchError(src.to_path_buf(), err))?
@@ -63,7 +61,7 @@ impl Watcher {
 
         let src_path = &event.paths[0];
 
-        self.sorter.sort_file(src_path);
+        self.sorter.sort_file(src_path).unwrap();
     }
 
     fn handle_file_remove(&self, _event: &Event) {}
