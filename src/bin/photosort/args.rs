@@ -11,14 +11,14 @@ use crate::{ReplicatorKind, Template, TemplateParser};
 /// A pictures/files organizer.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-pub(crate) struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    pub(crate) command: Command,
+    pub command: Command,
 }
 
 #[derive(Subcommand, Debug)]
 #[command(author = None, version, about)]
-pub(crate) enum Command {
+pub enum Command {
     /// Sort all files once.
     Sort(SortCmd),
 
@@ -27,7 +27,7 @@ pub(crate) enum Command {
 }
 
 #[derive(Debug)]
-pub(crate) enum CommonArgs {
+pub enum CommonArgs {
     Config(ConfigArgs),
     Cli(CliArgs),
 }
@@ -87,6 +87,7 @@ impl CommonArgs {
             Arg::new("sources")
                 .num_args(1..)
                 .action(ArgAction::Append)
+                .value_parser(PathBufValueParser::default())
                 .required(true)
                 .help("add this replicator kind to the list"),
         )
@@ -110,14 +111,14 @@ impl Args for CommonArgs {
 
 #[derive(Parser, Debug)]
 #[command()]
-pub(crate) struct ConfigArgs {
+pub struct ConfigArgs {
     #[arg(short, long)]
     config: PathBuf,
 }
 
 #[derive(Parser, Debug)]
 #[command()]
-pub(crate) struct CliArgs {
+pub struct CliArgs {
     #[arg(short, long, default_value = "false")]
     pub overwrite: bool,
 
@@ -127,20 +128,20 @@ pub(crate) struct CliArgs {
     #[arg(short, long, value_parser = TemplateParser::default())]
     pub template: Template,
 
-    #[arg()]
-    pub sources: Vec<PathBuf>
+    #[arg(value_parser = PathBufValueParser::default())]
+    pub sources: Vec<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-pub(crate) struct SortCmd {
+pub struct SortCmd {
     #[command(flatten)]
     pub common: CommonArgs,
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-pub(crate) struct WatchCmd {
+pub struct WatchCmd {
     #[command(flatten)]
     pub common: CommonArgs,
 

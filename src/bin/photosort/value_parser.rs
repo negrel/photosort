@@ -1,7 +1,7 @@
 use clap::builder::TypedValueParser;
 use clap::error::ErrorKind;
 
-use crate::template::Template;
+use photosort::template::Template;
 
 #[derive(Clone, Default)]
 pub struct TemplateParser {}

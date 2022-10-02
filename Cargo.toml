@@ -3,15 +3,22 @@ name = "photosort"
 version = "0.1.0"
 edition = "2021"
 authors = ["Alexandre Negrel <negrel.dev@protonmail.com>"]
+homepage = "https://github.com/negrel/photosort"
+repository = "https://github.com/negrel/photosort"
+license = "MIT"
 
 [profile.release]
 strip = true
 lto = true
 debug = false
 
+[lib]
+name = "photosort"
+path = "src/lib.rs"
+
 [[bin]]
 name = "photosort"
-path = "src/main.rs"
+path = "src/bin/photosort/main.rs"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
