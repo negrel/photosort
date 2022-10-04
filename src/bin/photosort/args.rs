@@ -43,9 +43,9 @@ impl FromArgMatches for CommonArgs {
 
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
         if matches.get_one::<PathBuf>("config").is_some() {
-            ConfigArgs::from_arg_matches(matches).map(|args| CommonArgs::Config(args))
+            ConfigArgs::from_arg_matches(matches).map(CommonArgs::Config)
         } else {
-            CliArgs::from_arg_matches(matches).map(|args| CommonArgs::Cli(args))
+            CliArgs::from_arg_matches(matches).map(CommonArgs::Cli)
         }
     }
 }

@@ -79,10 +79,7 @@ impl From<ReplicatorKind> for Box<dyn Replicator> {
 
 impl FromIterator<ReplicatorKind> for Box<dyn Replicator> {
     fn from_iter<T: IntoIterator<Item = ReplicatorKind>>(iter: T) -> Self {
-        Box::<dyn Replicator>::from_iter(
-            iter.into_iter()
-                .map(|kind| Box::<dyn Replicator>::from(kind)),
-        )
+        Box::<dyn Replicator>::from_iter(iter.into_iter().map(Box::<dyn Replicator>::from))
     }
 }
 
@@ -102,7 +99,7 @@ impl FromIterator<Box<dyn Replicator>> for Box<dyn Replicator> {
 pub struct ReplicatorWithFallback {
     inner: Box<dyn Replicator>,
     fallback: Box<dyn Replicator>,
-    on_error: Option<Box<dyn Fn(io::Error) -> ()>>,
+    on_error: Option<Box<dyn Fn(io::Error)>>,
 }
 
 impl ReplicatorWithFallback {
@@ -114,7 +111,7 @@ impl ReplicatorWithFallback {
         }
     }
 
-    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error) -> ()>) {
+    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error)>) {
         self.on_error = Some(f);
     }
 }
@@ -133,7 +130,7 @@ impl Replicator for ReplicatorWithFallback {
     }
 
     fn kind(&self) -> ReplicatorKind {
-        return self.inner.kind();
+        self.inner.kind()
     }
 }
 
@@ -152,14 +149,14 @@ pub struct NoneReplicator {}
 const NONE_REPLICATE_ERR_MSG: &str = "none replicator reached: replicate failed";
 
 impl NoneReplicator {
-    pub fn replicate_error(&self) -> io::Error {
+    pub fn replicate_error() -> io::Error {
         io::Error::new::<&str>(io::ErrorKind::Unsupported, NONE_REPLICATE_ERR_MSG)
     }
 }
 
 impl Replicator for NoneReplicator {
     fn replicate(&self, _src: &Path, _dst: &Path) -> io::Result<()> {
-        Err(self.replicate_error())
+        Err(Self::replicate_error())
     }
 
     fn kind(&self) -> ReplicatorKind {
@@ -308,7 +305,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().kind(),
-            replicator.replicate_error().kind()
+            NoneReplicator::replicate_error().kind()
         );
     }
 
