@@ -4,7 +4,5 @@ push:
 	BUILD ../+test
 
 tag:
-	BUILD --platform=linux/386 ../+build
-	BUILD --platform=linux/amd64 ../+build
-	BUILD --platform=linux/arm64/v8 ../+build
+	BUILD --platform=linux/amd64 --platform=linux/386 --platform=linux/arm64/v8 ../+build-image --release=y
 

@@ -8,11 +8,15 @@ jobs:
         uses: earthly/actions-setup@v1
         with:
           version: "v0.6.24"
+      - name: Docker login # to avoid dockerhub rate-limiting
+        run: docker login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin <<< "${{ secrets.DOCKERHUB_PASSWORD }}"
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v1
       - name: Check out repository code
         uses: actions/checkout@v3
       - run: printenv
       - name: Run earthly +tag target
-        run: earthly .github/+tag
+        run: |
+          earthly config 'global.conversion_parallelism' 0;
+          earthly --push .github/+tag --tag="$GITHUB_REF" --prefix="${{ secrets.DOCKERHUB_USERNAME }}"
 

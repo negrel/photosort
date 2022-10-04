@@ -16,24 +16,22 @@ test:
 build:
 	FROM +fetch
 	COPY src/ src/
-	ARG release="y"
+	ARG release="n"
 	RUN cargo build $(test "$release" = "y" && echo "--release")
-	SAVE ARTIFACT target/release/photosort bin
-	SAVE ARTIFACT target/ targe_dir AS LOCAL target/
+	SAVE ARTIFACT target/*/photosort bin
+	SAVE ARTIFACT target/ AS LOCAL .
 
-build-debug:
-	FROM +build --release="n"
-
-build-local:
-	ARG OUT="target/release/photosort"
-	COPY +build/bin $OUT
+build-release:
+	BUILD +build --release="y"
 
 build-image:
 	FROM docker.io/library/debian:bullseye
+	COPY scripts/tags.sh /usr/local/bin/tags
 	COPY +build/bin /usr/local/bin/photosort
 	ENTRYPOINT ["/usr/local/bin/photosort"]
 	CMD ["--help"]
 	ARG prefix="negrel"
-	ARG tag="latest"
-	SAVE IMAGE $prefix/photosort:$tag
-
+	ARG tag="dev"
+	FOR t IN $(tags $tag) 
+		SAVE IMAGE --push "$prefix/photosort:$t"
+	END
