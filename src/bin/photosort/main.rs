@@ -7,6 +7,7 @@ use args::CommonArgs;
 use args::SortCmd;
 use args::WatchCmd;
 use clap::Parser;
+use daemonize::Daemonize;
 use env_logger::Env;
 
 use photosort::replicator::{Replicator, ReplicatorKind};
@@ -57,15 +58,22 @@ fn watch_cmd(watch_args: WatchCmd) {
     };
 
     if watch_args.daemon {
-        unimplemented!("daemon mode is not supported for the moment")
+        log::info!("starting daemon process");
+        match Daemonize::new().start() {
+            Ok(_) => {}
+            Err(err) => {
+                log::error!("an error occurred while daemonzing the process: {}", err);
+                return;
+            }
+        }
+        log::info!("daemon process started");
     }
 
     let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
     let config = sort::Config::new(args.template, replicator, args.overwrite);
 
-    match Watcher::new(args.sources, Sorter::new(config)).start() {
-        Ok(_) => {}
-        Err(err) => log::error!("an error occurred while running in daemon mode: {}", err),
+    if let Err(err) = Watcher::new(args.sources, Sorter::new(config)).start() {
+        log::error!("an error occurred while starting watching sources: {}", err);
     }
 }
 

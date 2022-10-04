@@ -31,6 +31,7 @@ serde = { version = "1.0.143", features = ["derive"] } # Serialization & deseria
 thiserror = "1.0"
 notify = "5.0"
 clap = { version = "4.0", features = ["derive", "cargo"] }
+daemonize = "0.4.1"
 
 [dev-dependencies]
 uuid = { version = "1.1.2", features = ["v4"] }
