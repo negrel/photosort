@@ -49,7 +49,7 @@ impl From<&OsStr> for ReplicatorKind {
     }
 }
 
-pub trait Replicator {
+pub trait Replicator: Send + Sync {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;
 }
@@ -99,7 +99,7 @@ impl FromIterator<Box<dyn Replicator>> for Box<dyn Replicator> {
 pub struct ReplicatorWithFallback {
     inner: Box<dyn Replicator>,
     fallback: Box<dyn Replicator>,
-    on_error: Option<Box<dyn Fn(io::Error)>>,
+    on_error: Option<Box<dyn Fn(io::Error) + Send + Sync>>,
 }
 
 impl ReplicatorWithFallback {
@@ -111,7 +111,7 @@ impl ReplicatorWithFallback {
         }
     }
 
-    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error)>) {
+    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error) + Send + Sync>) {
         self.on_error = Some(f);
     }
 }
@@ -214,7 +214,7 @@ where
     pub replicate_fn: F,
 }
 
-impl<F: Fn(&Path, &Path) -> io::Result<()>> Replicator for MockReplicator<F> {
+impl<F: Fn(&Path, &Path) -> io::Result<()> + Send + Sync> Replicator for MockReplicator<F> {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()> {
         (self.replicate_fn)(src, dst)
     }
