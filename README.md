@@ -1,5 +1,7 @@
 # :camera: `photosort` - A pictures/files organizer.
 
+![push workflow](https://github.com/negrel/photosort/actions/workflows/push.yaml/badge.svg)
+
 A simple CLI/daemon program to sorts your pictures/files.
 
 ## Getting started
