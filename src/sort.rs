@@ -158,10 +158,15 @@ pub enum SkippedReason {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::{env, io};
+    use std::io::{Read, Write};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::{env, fs, io};
 
-    use crate::sort::SkippedReason;
+    use uuid::Uuid;
+
+    use crate::replicator::CopyReplicator;
+    use crate::sort::{SkippedReason, SortResult};
     use crate::{
         replicator::{NoneReplicator, SoftLinkReplicator},
         template::{self, Template},
@@ -285,5 +290,107 @@ mod tests {
 
         assert_eq!(replicate_path, src_path);
         assert_eq!(skip_reason, SkippedReason::SameFile);
+    }
+
+    fn setup() -> PathBuf {
+        let tmpdir = env::temp_dir();
+
+        let src = tmpdir.join(format!("{}.txt", Uuid::new_v4()));
+        let mut src_file = fs::File::create(&src).unwrap();
+        writeln!(&mut src_file, "{}", Uuid::new_v4()).unwrap();
+
+        src
+    }
+
+    fn teardown(src: &Path, dst: &Path) {
+        let _ = fs::remove_file(src);
+        let _ = fs::remove_file(dst);
+    }
+
+    fn file_content_eq(src: &Path, dst: &Path) -> bool {
+        let mut src_file = fs::File::open(src).unwrap();
+        let mut src_content = String::new();
+        let mut dst_content = String::new();
+
+        src_file.read_to_string(&mut src_content).unwrap();
+
+        match fs::File::open(dst) {
+            Ok(mut dst_file) => {
+                dst_file.read_to_string(&mut dst_content).unwrap();
+            }
+            Err(_) => return false,
+        }
+
+        src_content == dst_content
+    }
+
+    #[test]
+    fn replicated() {
+        let src = setup();
+        let mut expected_dst = src.to_str().unwrap().to_string();
+        expected_dst.push_str("-copy");
+
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(":file.path:-copy").unwrap(),
+            replicator: Box::new(CopyReplicator::default()),
+            overwrite: false,
+        });
+
+        let result = sorter.sort_file(&src);
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+        let (replicate_path, overwrite) = match result {
+            SortResult::Replicated {
+                replicate_path,
+                overwrite,
+            } => (replicate_path, overwrite),
+            _ => panic!(
+                "expected sort result of type Replicated, got \"{:?}\"",
+                result
+            ),
+        };
+
+        assert!(!overwrite);
+        assert_eq!(replicate_path.to_str().unwrap(), expected_dst);
+        assert!(file_content_eq(&src, &replicate_path));
+
+        teardown(&src, &replicate_path);
+    }
+
+    #[test]
+    fn replicated_with_overwrite() {
+        let src = setup();
+
+        let mut expected_dst = src.to_str().unwrap().to_string();
+        expected_dst.push_str("-copy");
+        let _ = fs::File::create(&expected_dst).unwrap();
+
+        let sorter = Sorter::new(super::Config {
+            template: Template::parse_str(":file.path:-copy").unwrap(),
+            replicator: Box::new(CopyReplicator::default()),
+            overwrite: true,
+        });
+
+        let result = sorter.sort_file(&src);
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+        let (replicate_path, overwrite) = match result {
+            SortResult::Replicated {
+                replicate_path,
+                overwrite,
+            } => (replicate_path, overwrite),
+            _ => panic!(
+                "expected sort result of type Replicated, got \"{:?}\"",
+                result
+            ),
+        };
+
+        assert!(overwrite);
+        assert_eq!(replicate_path.to_str().unwrap(), expected_dst);
+        assert!(file_content_eq(&src, &replicate_path));
+
+        teardown(&src, &replicate_path);
     }
 }
