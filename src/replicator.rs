@@ -1,13 +1,14 @@
-use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
+use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug, clap::ValueEnum, Clone, Copy, PartialEq, Eq)]
 #[clap(rename_all = "lowercase")]
@@ -38,13 +39,20 @@ impl Display for ReplicatorKind {
     }
 }
 
-impl From<&OsStr> for ReplicatorKind {
-    fn from(str: &OsStr) -> Self {
-        match str.to_str().to_owned().unwrap() {
-            "copy" => ReplicatorKind::Copy,
-            "hardlink" => ReplicatorKind::HardLink,
-            "softlink" => ReplicatorKind::SoftLink,
-            "none" | &_ => ReplicatorKind::None,
+#[derive(Error, Debug)]
+#[error("failed to parse string: {0}")]
+pub struct ParseError(String);
+
+impl FromStr for ReplicatorKind {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "copy" => Ok(ReplicatorKind::Copy),
+            "hardlink" => Ok(ReplicatorKind::HardLink),
+            "softlink" => Ok(ReplicatorKind::SoftLink),
+            "none" => Ok(ReplicatorKind::None),
+            _ => Err(ParseError(format!("unknown replicator kind: {}", s))),
         }
     }
 }
