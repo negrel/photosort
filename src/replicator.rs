@@ -6,23 +6,20 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
+use serde::de::Error;
+use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug, clap::ValueEnum, Clone, Copy, PartialEq, Eq)]
 #[clap(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum ReplicatorKind {
     #[serde(skip)]
     None,
-
-    #[serde(rename = "copy")]
     Copy,
-
-    #[serde(rename = "hardlink")]
     HardLink,
-
-    #[serde(rename = "softlink")]
     SoftLink,
 }
 
@@ -64,13 +61,13 @@ pub trait Replicator: Send + Sync {
 
 impl<'a> Display for dyn Replicator + 'a {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.kind(), f)
+        f.write_str(format!("{}Replicator", &self.kind()).as_str())
     }
 }
 
 impl<'a> Debug for dyn Replicator + 'a {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.kind(), f)
+        f.write_str(format!("{}Replicator", &self.kind()).as_str())
     }
 }
 
@@ -101,6 +98,62 @@ impl FromIterator<Box<dyn Replicator>> for Box<dyn Replicator> {
         };
 
         Box::new(ReplicatorWithFallback::new(first, Box::from_iter(iter)))
+    }
+}
+
+impl FromStr for Box<dyn Replicator> {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let kind = match ReplicatorKind::from_str(s) {
+            Ok(kind) => kind,
+            Err(err) => return Err(err),
+        };
+
+        Ok(Box::from(kind))
+    }
+}
+
+impl<'de> Deserialize<'de> for Box<dyn Replicator> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ReplicatorVisitor;
+        impl<'de> Visitor<'de> for ReplicatorVisitor {
+            type Value = Box<dyn Replicator>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a replicator or an array of replicator")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match Box::<dyn Replicator>::from_str(v) {
+                    Ok(replicator) => Ok(replicator),
+                    Err(err) => Err(E::custom(err)),
+                }
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut next: Box<dyn Replicator> = seq.next_element()?.ok_or_else(|| {
+                    A::Error::custom("no values in seq, expecting at least one replicator")
+                })?;
+
+                while let Some(repl) = seq.next_element()? {
+                    next = Box::new(ReplicatorWithFallback::new(repl, next));
+                }
+
+                Ok(next)
+            }
+        }
+
+        deserializer.deserialize_any(ReplicatorVisitor)
     }
 }
 

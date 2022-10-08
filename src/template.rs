@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::string::FromUtf8Error;
 
+use serde::de::Visitor;
+use serde::Deserialize;
 use thiserror::Error;
 
 pub trait TemplateValue {
@@ -137,6 +140,37 @@ impl FromStr for Template {
         }
 
         Ok(Template { tokens })
+    }
+}
+
+impl<'de> Deserialize<'de> for Template {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TemplateVisitor;
+        impl<'de> Visitor<'de> for TemplateVisitor {
+            type Value = Template;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a template literal string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match Template::from_str(v) {
+                    Ok(template) => Ok(template),
+                    Err(err) => Err(E::custom(format!(
+                        "failed to deserialize template: {}",
+                        err
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(TemplateVisitor{})
     }
 }
 

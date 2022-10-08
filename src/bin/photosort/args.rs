@@ -20,19 +20,19 @@ pub struct Cli {
 #[command(author = None, version, about)]
 pub enum Command {
     /// Sort all files once.
-    Sort(SortCmd),
+    Sort(CliArgs),
 
-    /// Watch & sort files as their added/removed.
+    /// Watch & sort files as their added.
     Watch(WatchCmd),
 }
 
 #[derive(Debug)]
-pub enum CommonArgs {
+pub enum CliOrConfigArgs {
     Config(ConfigArgs),
     Cli(CliArgs),
 }
 
-impl FromArgMatches for CommonArgs {
+impl FromArgMatches for CliOrConfigArgs {
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
         if matches.get_one::<PathBuf>("config").is_some() {
             ConfigArgs::from_arg_matches(matches).map(|_| ())
@@ -43,14 +43,14 @@ impl FromArgMatches for CommonArgs {
 
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
         if matches.get_one::<PathBuf>("config").is_some() {
-            ConfigArgs::from_arg_matches(matches).map(CommonArgs::Config)
+            ConfigArgs::from_arg_matches(matches).map(CliOrConfigArgs::Config)
         } else {
-            CliArgs::from_arg_matches(matches).map(CommonArgs::Cli)
+            CliArgs::from_arg_matches(matches).map(CliOrConfigArgs::Cli)
         }
     }
 }
 
-impl CommonArgs {
+impl CliOrConfigArgs {
     fn define_args(cmd: clap::Command) -> clap::Command {
         cmd.arg(
             Arg::new("config")
@@ -99,7 +99,7 @@ impl CommonArgs {
     }
 }
 
-impl Args for CommonArgs {
+impl Args for CliOrConfigArgs {
     fn augment_args(cmd: clap::Command) -> clap::Command {
         Self::define_args(cmd)
     }
@@ -113,7 +113,7 @@ impl Args for CommonArgs {
 #[command()]
 pub struct ConfigArgs {
     #[arg(short, long)]
-    config: PathBuf,
+    pub config: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -134,16 +134,9 @@ pub struct CliArgs {
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-pub struct SortCmd {
-    #[command(flatten)]
-    pub common: CommonArgs,
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
 pub struct WatchCmd {
     #[command(flatten)]
-    pub common: CommonArgs,
+    pub common: CliOrConfigArgs,
 
     /// Fork a daemon process.
     #[arg(short, long)]

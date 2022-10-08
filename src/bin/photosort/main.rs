@@ -1,10 +1,12 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
+use args::CliArgs;
+use args::CliOrConfigArgs;
 use args::Command;
-use args::CommonArgs;
-use args::SortCmd;
 use args::WatchCmd;
 use clap::Parser;
 use daemonize::Daemonize;
@@ -21,6 +23,7 @@ use photosort::sort::Sorter;
 use photosort::template::Template;
 
 mod args;
+mod config;
 mod value_parser;
 
 use args::Cli;
@@ -37,12 +40,7 @@ pub fn main() {
     }
 }
 
-fn sort_cmd(args: SortCmd) {
-    let args = match args.common {
-        CommonArgs::Cli(args) => args,
-        CommonArgs::Config(_args) => unimplemented!("config file is not supported for the moment"),
-    };
-
+fn sort_cmd(args: CliArgs) {
     let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
     let sorter = Sorter::new(sort::Config::new(args.template, replicator, args.overwrite));
 
@@ -83,12 +81,6 @@ fn sort_dir(sorter: &Sorter, src_path: &Path) {
 }
 
 fn watch_cmd(watch_args: WatchCmd) {
-    let args = match watch_args.common {
-        CommonArgs::Cli(args) => args,
-        CommonArgs::Config(_args) => unimplemented!("config file is not supported for the moment"),
-    };
-
-    // daemonize if daemon flag is true
     if watch_args.daemon {
         log::debug!("starting daemon process");
         match Daemonize::new()
@@ -104,12 +96,43 @@ fn watch_cmd(watch_args: WatchCmd) {
         log::info!("daemon process started");
     }
 
-    // setup sorter
-    log::debug!("setting up sorter");
-    let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
-    let config = sort::Config::new(args.template, replicator, args.overwrite);
-    let sorter = Sorter::new(config);
-    log::debug!("sorter successfully setted up");
+    match watch_args.common {
+        CliOrConfigArgs::Cli(args) => {
+            log::debug!("setting up sorter");
+            let cfg = config::Watch::from(args);
+            log::debug!("sorter successfully setted up");
+
+            watch(cfg);
+        }
+        CliOrConfigArgs::Config(args) => {
+            log::debug!("reading config file...");
+            let result = match fs::read_to_string(args.config) {
+                Ok(cfg_str) => toml::from_str(&cfg_str),
+                Err(err) => {
+                    log::error!("failed to read config file: {}", err);
+                    return;
+                }
+            };
+            log::debug!("config file successfully read");
+            log::debug!("deserializing config file...");
+            let cfg = match result {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    log::error!("failed to deserialize config file: {}", err);
+                    return;
+                }
+            };
+            log::debug!("config file successfully deserialized");
+
+            watch(cfg);
+        }
+    };
+}
+
+pub fn watch(cfg: config::Watch) {
+    log::debug!("watching with config: {:?}", cfg);
+
+    let sorter = Sorter::new(cfg.sorter);
 
     log::debug!("creating watcher suitable for this platform");
     let result = notify::recommended_watcher(move |result| match result {
@@ -126,7 +149,7 @@ fn watch_cmd(watch_args: WatchCmd) {
     log::debug!("watcher successfully created");
 
     log::debug!("adding sources to watcher watch list");
-    for src in args.sources {
+    for src in cfg.sources {
         log::debug!("adding {:?} to watch list", src);
         match watcher.watch(&src, RecursiveMode::Recursive) {
             Ok(_) => {}
@@ -137,6 +160,10 @@ fn watch_cmd(watch_args: WatchCmd) {
         }
     }
     log::debug!("sources successfully added to watcher watch list");
+
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
 }
 
 fn handle_watch_event(event: Event, sorter: &Sorter) {

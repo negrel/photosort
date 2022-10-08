@@ -1,0 +1,4 @@
+sources = ["/home/anegrel/src"]
+replicator = ["hardlink", "softlink", "copy"]
+template = "/home/anegrel/dst/:file.name:"
+overwrite = true

@@ -4,16 +4,19 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::result;
 
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::replicator::Replicator;
 use crate::template;
 use crate::template::{Context, Template, TemplateValue};
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     template: Template,
     replicator: Box<dyn Replicator>,
+
+    #[serde(default)]
     overwrite: bool,
 }
 
@@ -161,7 +164,6 @@ mod tests {
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use std::{env, fs, io};
 
     use uuid::Uuid;
