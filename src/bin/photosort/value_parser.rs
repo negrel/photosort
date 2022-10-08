@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use clap::builder::TypedValueParser;
 use clap::error::ErrorKind;
 
@@ -24,7 +26,7 @@ impl TypedValueParser for TemplateParser {
             }
         };
 
-        match Template::parse_str(str) {
+        match Template::from_str(str) {
             Ok(tpl) => Ok(tpl),
             Err(err) => Err(cmd.clone().error(ErrorKind::InvalidValue, err.to_string())),
         }

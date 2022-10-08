@@ -160,6 +160,7 @@ pub enum SkippedReason {
 mod tests {
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
+    use std::str::FromStr;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use std::{env, fs, io};
 
@@ -177,7 +178,7 @@ mod tests {
     #[test]
     fn template_error() {
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(":inexistent.variable:").unwrap(),
+            template: Template::from_str(":inexistent.variable:").unwrap(),
             replicator: Box::new(NoneReplicator::default()),
             overwrite: false,
         });
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     fn replicate_error() {
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(":file.path:2").unwrap(),
+            template: Template::from_str(":file.path:2").unwrap(),
             replicator: Box::new(NoneReplicator::default()),
             overwrite: false,
         });
@@ -224,7 +225,7 @@ mod tests {
         let src_path = PathBuf::from("/proc/self/stat");
 
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(":file.path:us").unwrap(),
+            template: Template::from_str(":file.path:us").unwrap(),
             replicator: Box::new(SoftLinkReplicator::default()),
             overwrite: true,
         });
@@ -246,7 +247,7 @@ mod tests {
     fn skipped_source_and_destination_are_same() {
         let src_path = PathBuf::from(env::args().next().unwrap());
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(src_path.to_str().unwrap()).unwrap(),
+            template: Template::from_str(src_path.to_str().unwrap()).unwrap(),
             replicator: Box::new(SoftLinkReplicator::default()),
             overwrite: true,
         });
@@ -271,7 +272,7 @@ mod tests {
     fn skipped_overwrite_disabled() {
         let src_path = PathBuf::from(env::args().next().unwrap());
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(src_path.to_str().unwrap()).unwrap(),
+            template: Template::from_str(src_path.to_str().unwrap()).unwrap(),
             replicator: Box::new(SoftLinkReplicator::default()),
             overwrite: true,
         });
@@ -331,7 +332,7 @@ mod tests {
         expected_dst.push_str("-copy");
 
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(":file.path:-copy").unwrap(),
+            template: Template::from_str(":file.path:-copy").unwrap(),
             replicator: Box::new(CopyReplicator::default()),
             overwrite: false,
         });
@@ -367,7 +368,7 @@ mod tests {
         let _ = fs::File::create(&expected_dst).unwrap();
 
         let sorter = Sorter::new(super::Config {
-            template: Template::parse_str(":file.path:-copy").unwrap(),
+            template: Template::from_str(":file.path:-copy").unwrap(),
             replicator: Box::new(CopyReplicator::default()),
             overwrite: true,
         });

@@ -69,7 +69,32 @@ pub enum RenderError {
 }
 
 impl Template {
-    pub fn parse_str(s: &str) -> Result<Self, ParseError> {
+    pub fn render<T: Context>(&self, ctx: &T) -> Result<PathBuf, RenderError> {
+        let mut result = OsString::default();
+
+        for i in 0..self.tokens.len() {
+            let tk = &self.tokens[i];
+
+            match tk {
+                Token::String(str) => result.push(&str[..]),
+                Token::Variable(name) => {
+                    if let Some(value) = ctx.get(name) {
+                        result.push(value.render(name, ctx));
+                    } else {
+                        return Err(RenderError::UndefinedVariable(name.to_string()));
+                    }
+                }
+            }
+        }
+
+        Ok(PathBuf::from(result))
+    }
+}
+
+impl FromStr for Template {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut tokens = Vec::new();
         let mut char_count = 1;
 
@@ -113,37 +138,16 @@ impl Template {
 
         Ok(Template { tokens })
     }
-
-    pub fn render<T: Context>(&self, ctx: &T) -> Result<PathBuf, RenderError> {
-        let mut result = OsString::default();
-
-        for i in 0..self.tokens.len() {
-            let tk = &self.tokens[i];
-
-            match tk {
-                Token::String(str) => result.push(&str[..]),
-                Token::Variable(name) => {
-                    if let Some(value) = ctx.get(name) {
-                        result.push(value.render(name, ctx));
-                    } else {
-                        return Err(RenderError::UndefinedVariable(name.to_string()));
-                    }
-                }
-            }
-        }
-
-        Ok(PathBuf::from(result))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ParseError, RenderError, Template, TemplateValue};
-    use std::{collections::HashMap, path::PathBuf};
+    use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
     #[test]
     fn string_without_variable() {
-        let tpl = Template::parse_str("abcdef").unwrap();
+        let tpl = Template::from_str("abcdef").unwrap();
         assert_eq!(tpl.tokens.len(), 1);
 
         let str = tpl.render(&HashMap::new()).unwrap();
@@ -160,7 +164,7 @@ mod tests {
 
     #[test]
     fn empty_string() {
-        let tpl = Template::parse_str("").unwrap();
+        let tpl = Template::from_str("").unwrap();
         assert_eq!(tpl.tokens.len(), 0);
 
         let str = tpl.render(&HashMap::new()).unwrap();
@@ -171,8 +175,7 @@ mod tests {
 
     #[test]
     fn string() {
-        let tpl =
-            Template::parse_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
+        let tpl = Template::from_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
         assert_eq!(tpl.tokens.len(), 5);
 
         let mut hmap: HashMap<String, Box<dyn TemplateValue>> = HashMap::new();
@@ -192,19 +195,19 @@ mod tests {
 
     #[test]
     fn string_with_unclosed_variable_error() {
-        let tpl = Template::parse_str(":date.day");
+        let tpl = Template::from_str(":date.day");
         assert_eq!(tpl.unwrap_err(), ParseError::UnclosedVariable(8));
     }
 
     #[test]
     fn string_with_unnamed_variable_error() {
-        let tpl = Template::parse_str("i'm going to :: next year");
+        let tpl = Template::from_str("i'm going to :: next year");
         assert_eq!(tpl.unwrap_err(), ParseError::UnamedVariable(14));
     }
 
     #[test]
     fn undefined_variable_error() {
-        let tpl = Template::parse_str("i'm going to :destination: next year").unwrap();
+        let tpl = Template::from_str("i'm going to :destination: next year").unwrap();
         let result = tpl.render(&HashMap::new());
 
         assert_eq!(
