@@ -1,5 +1,7 @@
 name: release
-on: ["release"]
+on:
+  release:
+    types: ["published"]
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -18,5 +20,5 @@ jobs:
       - name: Run earthly +tag target
         run: |
           earthly config 'global.conversion_parallelism' 0;
-          earthly --push .github/+tag --tag="$GITHUB_REF" --prefix="${{ secrets.DOCKERHUB_USERNAME }}"
+          earthly --push .github/+tag --tag="$GITHUB_REF_NAME" --prefix="${{ secrets.DOCKERHUB_USERNAME }}"
 
