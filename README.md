@@ -25,11 +25,16 @@ podman pull docker.io/negrel/photosort
 ### Usage
 
 ```shell
-# Print help
+# Print help informations
 photosort --help
+
+# Using docker
+docker run --rm -it negrel/photosort --help
 ```
 
-Sort given directories/files:
+Sort given `/path/to/src1` and `/path/to/src2` directories/files recursively using
+`/path/to/dst/:file.name:` template. Files and directories are replicated using
+hardlink and fallback to softlink if the primer fails.
 
 ```shell
 photosort sort -r hardlink -r softlink "/path/to/dst/:file.name:" /path/to/src1 /path/to/src2 ...
@@ -37,8 +42,20 @@ photosort sort -r hardlink -r softlink "/path/to/dst/:file.name:" /path/to/src1 
 
 Watch directories and sort them as new files are added:
 ```shell
-photosort daemon -r hardlink -r copy "/path/to/dst/:file.name:" /path/to/src1 /path/to/src2 ...
+photosort watch --daemon -r hardlink -r copy "/path/to/dst/:file.name:" /path/to/src1 /path/to/src2 ...
 ```
+
+## Template variables
+
+The following template variables are available for now. If you're missing other variables,
+don't hesitate to make a PR !
+
+| Variable | Description |
+| :------- | :---------- |
+| `file.path` | Path to file. |
+| `file.name` | File name. |
+| `file.stem` | Extracts the stem (non-extension) portion of the filename. |
+| `file.extension` | Extracts the extension part of the filename. |
 
 ## Contributing
 
