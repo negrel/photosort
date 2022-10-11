@@ -221,7 +221,8 @@ fn log_result(result: sort::Result, src_path: &Path) {
             }
         },
         Err(err) => match err {
-            SortError::TemplateError(err) => {
+            SortError::TemplateError(err) => log::error!("{:?} -x- ???: {}", src_path, err),
+            SortError::TemplateContextError(err) => {
                 log::error!("{:?} -x- ???: {}", src_path, err);
             }
             SortError::ReplicateError(err, replicate_path)

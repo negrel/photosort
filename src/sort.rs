@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::error::Error;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,8 @@ use thiserror::Error;
 
 use crate::replicator::Replicator;
 use crate::template;
-use crate::template::{Context, Template, TemplateValue};
+use crate::template::context::Context;
+use crate::template::Template;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -42,8 +43,8 @@ impl Sorter {
 
     pub fn sort_file(&self, src_path: &Path) -> Result {
         // prepare template rendering context
-        let mut ctx: HashMap<String, Box<dyn TemplateValue>> = HashMap::default();
-        Self::prepare_template_ctx(&mut ctx, src_path);
+        let mut ctx = Context::default();
+        template::context::prepare_template_context(&mut ctx, src_path)?;
 
         // render destination path template
         let replicate_path = match self.cfg.template.render(&ctx) {
@@ -98,25 +99,6 @@ impl Sorter {
             overwrite,
         })
     }
-
-    fn prepare_template_ctx(ctx: &mut dyn Context, path: &Path) {
-        // filepath
-        ctx.insert("file.path".to_owned(), Box::new(path.to_owned()));
-
-        // filename
-        if let Some(fname) = path.file_name() {
-            ctx.insert("file.name".to_owned(), Box::new(fname.to_owned()));
-        };
-
-        if let Some(fstem) = path.file_stem() {
-            ctx.insert("file.stem".to_owned(), Box::new(fstem.to_owned()));
-        }
-
-        // file extension
-        if let Some(fext) = path.extension() {
-            ctx.insert("file.extension".to_owned(), Box::new(fext.to_owned()));
-        }
-    }
 }
 
 pub type Result = result::Result<SortResult, SortError>;
@@ -140,6 +122,9 @@ pub enum SortResult {
 
 #[derive(Error, Debug)]
 pub enum SortError {
+    #[error("failed to setup template context: {0}")]
+    TemplateContextError(#[from] Box<dyn Error>),
+
     #[error("failed to render file path template: {0}")]
     TemplateError(#[source] template::RenderError),
 

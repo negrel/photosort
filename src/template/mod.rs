@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
@@ -9,39 +8,10 @@ use serde::de::Visitor;
 use serde::Deserialize;
 use thiserror::Error;
 
-pub trait TemplateValue {
-    fn render(&self, name: &str, ctx: &dyn Context) -> OsString;
-}
+pub mod context;
+pub mod variables;
 
-impl TemplateValue for dyn ToString {
-    fn render(&self, name: &str, ctx: &dyn Context) -> OsString {
-        self.to_string().render(name, ctx)
-    }
-}
-
-impl TemplateValue for &str {
-    fn render(&self, name: &str, ctx: &dyn Context) -> OsString {
-        self.to_owned().to_owned().render(name, ctx)
-    }
-}
-
-impl TemplateValue for String {
-    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
-        OsString::from_str(self).unwrap()
-    }
-}
-
-impl TemplateValue for PathBuf {
-    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
-        self.clone().into_os_string()
-    }
-}
-
-impl TemplateValue for OsString {
-    fn render(&self, _name: &str, _ctx: &dyn Context) -> OsString {
-        self.clone()
-    }
-}
+use context::Context;
 
 #[derive(Debug, Clone)]
 pub struct Template {
@@ -72,7 +42,7 @@ pub enum RenderError {
 }
 
 impl Template {
-    pub fn render<T: Context>(&self, ctx: &T) -> Result<PathBuf, RenderError> {
+    pub fn render(&self, ctx: &Context) -> Result<PathBuf, RenderError> {
         let mut result = OsString::default();
 
         for i in 0..self.tokens.len() {
@@ -170,7 +140,7 @@ impl<'de> Deserialize<'de> for Template {
             }
         }
 
-        deserializer.deserialize_str(TemplateVisitor{})
+        deserializer.deserialize_str(TemplateVisitor {})
     }
 }
 
@@ -248,20 +218,5 @@ mod tests {
             result.unwrap_err(),
             RenderError::UndefinedVariable("destination".to_string())
         );
-    }
-}
-
-pub trait Context {
-    fn get(&self, key: &str) -> Option<&dyn TemplateValue>;
-    fn insert(&mut self, key: String, value: Box<dyn TemplateValue>);
-}
-
-impl Context for HashMap<String, Box<dyn TemplateValue>> {
-    fn get(&self, key: &str) -> Option<&dyn TemplateValue> {
-        self.get(key).map(|value| value.as_ref())
-    }
-
-    fn insert(&mut self, key: String, value: Box<dyn TemplateValue>) {
-        self.insert(key, value);
     }
 }
