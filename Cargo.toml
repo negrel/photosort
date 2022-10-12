@@ -33,6 +33,7 @@ thiserror = "1.0"
 notify = "5.0"
 clap = { version = "4.0", features = ["derive", "cargo"] }
 daemonize = "0.4.1"
+kamadak-exif = "0.5.4"
 
 [dev-dependencies]
 uuid = { version = "1.1.2", features = ["v4"] }

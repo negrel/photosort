@@ -1,4 +1,5 @@
 sources = ["/home/anegrel/src"]
 replicator = ["hardlink", "softlink", "copy"]
-template = "/home/anegrel/dst/:file.name:"
+template = "/home/anegrel/dst/:exif.date:/:file.name:"
 overwrite = true
+

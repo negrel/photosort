@@ -52,10 +52,14 @@ don't hesitate to make a PR !
 
 | Variable | Description |
 | :------- | :---------- |
-| `file.path` | Path to file. |
+| `file.path` | Absolute path to file. |
 | `file.name` | File name. |
 | `file.stem` | Extracts the stem (non-extension) portion of the filename. |
 | `file.extension` | Extracts the extension part of the filename. |
+| `exif.date` | Exif date in RFC3339 format. |
+| `exif.date.year` | Year extracted from DateTime exif field. |
+| `exif.date.month` | Month extracted from DateTime exif field. |
+| `exif.date.day` | Day extracted from DateTime exif field. |
 
 ## Contributing
 

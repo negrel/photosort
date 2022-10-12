@@ -226,7 +226,8 @@ mod tests {
             _ => panic!("expected error of type OverwriteError, got \"{}\"", err),
         };
 
-        assert_eq!(dest_path, PathBuf::from("/proc/self/status"));
+        let pid = std::process::id();
+        assert_eq!(dest_path, PathBuf::from(format!("/proc/{}/status", pid)));
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 

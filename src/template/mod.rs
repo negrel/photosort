@@ -146,23 +146,24 @@ impl<'de> Deserialize<'de> for Template {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParseError, RenderError, Template, TemplateValue};
-    use std::{collections::HashMap, path::PathBuf, str::FromStr};
+    use super::context::Context;
+    use super::{ParseError, RenderError, Template};
+    use std::{path::PathBuf, str::FromStr};
 
     #[test]
     fn string_without_variable() {
         let tpl = Template::from_str("abcdef").unwrap();
         assert_eq!(tpl.tokens.len(), 1);
 
-        let str = tpl.render(&HashMap::new()).unwrap();
+        let str = tpl.render(&Context::default()).unwrap();
         assert_eq!(str, PathBuf::from("abcdef"));
-        let str = tpl.render(&HashMap::new()).unwrap();
+        let str = tpl.render(&Context::default()).unwrap();
         assert_eq!(str, PathBuf::from("abcdef"));
 
-        let mut hmap: HashMap<String, Box<dyn TemplateValue>> = HashMap::new();
+        let mut ctx = Context::default();
         let unused_var = "Hello world".to_owned();
-        hmap.insert("k".to_string(), Box::new(unused_var));
-        let str = tpl.render(&hmap).unwrap();
+        ctx.insert(&["k"], Box::new(unused_var));
+        let str = tpl.render(&ctx).unwrap();
         assert_eq!(str, PathBuf::from("abcdef"));
     }
 
@@ -171,9 +172,9 @@ mod tests {
         let tpl = Template::from_str("").unwrap();
         assert_eq!(tpl.tokens.len(), 0);
 
-        let str = tpl.render(&HashMap::new()).unwrap();
+        let str = tpl.render(&Context::default()).unwrap();
         assert_eq!(str, PathBuf::from(""));
-        let str = tpl.render(&HashMap::new()).unwrap();
+        let str = tpl.render(&Context::default()).unwrap();
         assert_eq!(str, PathBuf::from(""));
     }
 
@@ -182,18 +183,18 @@ mod tests {
         let tpl = Template::from_str(":date.day:/constant_prefix:date.month:/:date.year:").unwrap();
         assert_eq!(tpl.tokens.len(), 5);
 
-        let mut hmap: HashMap<String, Box<dyn TemplateValue>> = HashMap::new();
+        let mut ctx = Context::default();
         let year = "2022";
-        hmap.insert("date.year".to_string(), Box::new(year));
+        ctx.insert(&["date.year"], Box::new(year));
         let month = "08";
-        hmap.insert("date.month".to_string(), Box::new(month));
+        ctx.insert(&["date.month"], Box::new(month));
         let day = "19";
-        hmap.insert("date.day".to_string(), Box::new(day));
+        ctx.insert(&["date.day"], Box::new(day));
 
-        let str = tpl.render(&hmap).unwrap();
+        let str = tpl.render(&ctx).unwrap();
         assert_eq!(str, PathBuf::from("19/constant_prefix08/2022"));
 
-        let str = tpl.render(&hmap).unwrap();
+        let str = tpl.render(&ctx).unwrap();
         assert_eq!(str, PathBuf::from("19/constant_prefix08/2022"));
     }
 
@@ -212,7 +213,7 @@ mod tests {
     #[test]
     fn undefined_variable_error() {
         let tpl = Template::from_str("i'm going to :destination: next year").unwrap();
-        let result = tpl.render(&HashMap::new());
+        let result = tpl.render(&Context::default());
 
         assert_eq!(
             result.unwrap_err(),
