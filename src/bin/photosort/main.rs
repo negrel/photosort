@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::process::exit;
 use std::thread;
 use std::time::Duration;
 
@@ -29,39 +30,49 @@ mod value_parser;
 use args::Cli;
 use value_parser::TemplateParser;
 
+type ExitCode = i32;
+
 pub fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
 
-    match cli.command {
+    let exit_code = match cli.command {
         Command::Sort(args) => sort_cmd(args),
         Command::Watch(args) => watch_cmd(args),
-    }
+    };
+
+    exit(exit_code);
 }
 
-fn sort_cmd(args: CliArgs) {
+fn sort_cmd(args: CliArgs) -> ExitCode {
     let replicator = Box::<dyn Replicator>::from_iter(args.replicators);
     let sorter = Sorter::new(sort::Config::new(args.template, replicator, args.overwrite));
 
+    let mut exit_code = 0;
+
     for src_path in args.sources {
         if src_path.is_dir() {
-            sort_dir(&sorter, &src_path)
+            exit_code += sort_dir(&sorter, &src_path);
         } else {
-            log_result(sorter.sort_file(&src_path), &src_path);
+            exit_code += log_result(sorter.sort_file(&src_path), &src_path);
         }
     }
+
+    exit_code
 }
 
-fn sort_dir(sorter: &Sorter, src_path: &Path) {
+fn sort_dir(sorter: &Sorter, src_path: &Path) -> ExitCode {
     // create iterator
     let dir_iter: Vec<io::Result<fs::DirEntry>> = match fs::read_dir(src_path) {
         Ok(read_dir) => read_dir.collect(),
         Err(err) => {
             log::error!("failed to walk directory {:?}: {}", src_path, err);
-            return;
+            return 1;
         }
     };
+
+    let mut exit_code = 0;
 
     // iterate over files in src_path
     for dir_entry in dir_iter.into_iter().rev() {
@@ -70,17 +81,22 @@ fn sort_dir(sorter: &Sorter, src_path: &Path) {
                 let path = entry.path();
 
                 if path.is_dir() {
-                    sort_dir(sorter, &path);
+                    exit_code += sort_dir(sorter, &path);
                 } else {
-                    log_result(sorter.sort_file(&path), &path);
+                    exit_code += log_result(sorter.sort_file(&path), &path);
                 }
             }
-            Err(err) => log::error!("failed to walk directory {:?}: {}", src_path, err),
+            Err(err) => {
+                exit_code += 1;
+                log::error!("failed to walk directory {:?}: {}", src_path, err);
+            }
         }
     }
+
+    exit_code
 }
 
-fn watch_cmd(watch_args: WatchCmd) {
+fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
     if watch_args.daemon {
         log::debug!("starting daemon process");
         match Daemonize::new()
@@ -90,7 +106,7 @@ fn watch_cmd(watch_args: WatchCmd) {
             Ok(_) => {}
             Err(err) => {
                 log::error!("an error occurred while daemonzing the process: {}", err);
-                return;
+                return 1;
             }
         }
         log::info!("daemon process started");
@@ -106,11 +122,11 @@ fn watch_cmd(watch_args: WatchCmd) {
         }
         CliOrConfigArgs::Config(args) => {
             log::debug!("reading config file...");
-            let result = match fs::read_to_string(args.config) {
+            let result = match fs::read_to_string(&args.config) {
                 Ok(cfg_str) => toml::from_str(&cfg_str),
                 Err(err) => {
-                    log::error!("failed to read config file: {}", err);
-                    return;
+                    log::error!("failed to read config file {:?}: {}", args.config, err);
+                    return 1;
                 }
             };
             log::debug!("config file successfully read");
@@ -119,7 +135,7 @@ fn watch_cmd(watch_args: WatchCmd) {
                 Ok(cfg) => cfg,
                 Err(err) => {
                     log::error!("failed to deserialize config file: {}", err);
-                    return;
+                    return 1;
                 }
             };
             log::debug!("config file successfully deserialized");
@@ -127,6 +143,8 @@ fn watch_cmd(watch_args: WatchCmd) {
             watch(cfg);
         }
     };
+
+    0
 }
 
 pub fn watch(cfg: config::Watch) {
@@ -187,48 +205,56 @@ fn handle_watch_event(event: Event, sorter: &Sorter) {
     log::debug!("event handled: {:?}", event);
 }
 
-fn log_result(result: sort::Result, src_path: &Path) {
+fn log_result(result: sort::Result, src_path: &Path) -> ExitCode {
     log::debug!("{:?}: {:?}", src_path, result);
 
     match result {
-        Ok(sort_result) => match sort_result {
-            sort::SortResult::Skipped {
-                replicate_path,
-                reason,
-            } => {
-                let level = match reason {
-                    sort::SkippedReason::Overwrite => log::Level::Warn,
-                    sort::SkippedReason::SameFile => log::Level::Info,
-                };
-                log::log!(
-                    level,
-                    "{:?} -x- {:?}, skipped because: {}",
-                    src_path,
+        Ok(sort_result) => {
+            match sort_result {
+                sort::SortResult::Skipped {
                     replicate_path,
-                    reason
-                )
-            }
-            sort::SortResult::Replicated {
-                replicate_path,
-                overwrite,
-            } => {
-                log::info!(
-                    "file sorted: {:?} --> {:?} (overwrite: {:?})",
-                    src_path,
+                    reason,
+                } => {
+                    let level = match reason {
+                        sort::SkippedReason::Overwrite => log::Level::Warn,
+                        sort::SkippedReason::SameFile => log::Level::Info,
+                    };
+                    log::log!(
+                        level,
+                        "{:?} -x- {:?}, skipped because: {}",
+                        src_path,
+                        replicate_path,
+                        reason
+                    )
+                }
+                sort::SortResult::Replicated {
                     replicate_path,
-                    overwrite
-                )
-            }
-        },
-        Err(err) => match err {
-            SortError::TemplateError(err) => log::error!("{:?} -x- ???: {}", src_path, err),
-            SortError::TemplateContextError(err) => {
-                log::error!("{:?} -x- ???: {}", src_path, err);
-            }
-            SortError::ReplicateError(err, replicate_path)
-            | SortError::OverwriteError(err, replicate_path) => {
-                log::error!("{:?} -x- {:?}: {}", src_path, replicate_path, err);
-            }
-        },
+                    overwrite,
+                } => {
+                    log::info!(
+                        "file sorted: {:?} --> {:?} (overwrite: {:?})",
+                        src_path,
+                        replicate_path,
+                        overwrite
+                    )
+                }
+            };
+            0
+        }
+        Err(err) => {
+            match err {
+                SortError::TemplateError(err) => {
+                    log::error!("{:?} -x- ???: {}", src_path, err);
+                }
+                SortError::TemplateContextError(err) => {
+                    log::error!("{:?} -x- ???: {}", src_path, err);
+                }
+                SortError::ReplicateError(err, replicate_path)
+                | SortError::OverwriteError(err, replicate_path) => {
+                    log::error!("{:?} -x- {:?}: {}", src_path, replicate_path, err);
+                }
+            };
+            1
+        }
     }
 }
