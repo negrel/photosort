@@ -155,6 +155,10 @@ impl<'de> Deserialize<'de> for Template {
 
 #[cfg(test)]
 mod tests {
+    use thiserror::Error;
+
+    use crate::template::context::TemplateValue;
+
     use super::context::Context;
     use super::{ParseError, RenderError, Template};
     use std::{path::PathBuf, str::FromStr};
@@ -233,6 +237,36 @@ mod tests {
                 "expected error of type UndefinedVariable, got {}",
                 render_err
             ),
+        }
+    }
+
+    #[test]
+    fn variable_render_error() {
+        #[derive(Error, Debug)]
+        enum SimpleError {
+            #[error("an error occurred")]
+            A(),
+        }
+        struct AlwaysFailTemplateValue {}
+        impl TemplateValue for AlwaysFailTemplateValue {
+            fn render(&self, _name: &str, _ctx: &Context) -> crate::template::context::Result {
+                Err(Box::new(SimpleError::A()))
+            }
+        }
+
+        let tpl = Template::from_str("a :simple.variable: !").unwrap();
+        let mut ctx = Context::default();
+        ctx.insert(&["simple.variable"], Box::new(AlwaysFailTemplateValue {}));
+
+        let result = tpl.render(&ctx);
+        let render_err = result.unwrap_err();
+
+        match render_err {
+            RenderError::VariableRender(variable, error) => {
+                assert_eq!("simple.variable", variable);
+                assert_eq!(error.to_string(), "an error occurred");
+            }
+            _ => panic!("expected error of type VariableRender, got {}", render_err),
         }
     }
 }
