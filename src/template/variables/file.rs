@@ -1,6 +1,6 @@
+use std::error::Error;
 use std::path::PathBuf;
 use std::result;
-use std::{error::Error, fs};
 
 use crate::template::context::{Context, Result, TemplateValue};
 
@@ -8,23 +8,16 @@ use crate::template::context::{Context, Result, TemplateValue};
 struct FileTemplateValue;
 
 impl FileTemplateValue {
-    fn get_filepath(&self, ctx: &Context) -> PathBuf {
-        // get filepath private variables
-        let filepath = ctx.get(":file.path").unwrap().render("", ctx).unwrap();
-        PathBuf::from(filepath)
+    fn filepath(&self, ctx: &Context) -> Result {
+        ctx.get(":file.path").unwrap().render("", ctx)
     }
 
-    fn filepath(&self, ctx: &Context) -> Result {
-        let filepath = self.get_filepath(ctx);
-
-        match fs::canonicalize(filepath) {
-            Ok(filepath) => Ok(filepath.into()),
-            Err(err) => Err(Box::new(err)),
-        }
+    fn filepathbuf(&self, ctx: &Context) -> PathBuf {
+        PathBuf::from(self.filepath(ctx).unwrap())
     }
 
     fn filename(&self, ctx: &Context) -> Result {
-        let filepath = self.get_filepath(ctx);
+        let filepath = self.filepathbuf(ctx);
 
         match filepath.file_name() {
             Some(fname) => Ok(fname.to_owned()),
@@ -33,7 +26,7 @@ impl FileTemplateValue {
     }
 
     fn filestem(&self, ctx: &Context) -> Result {
-        let filepath = self.get_filepath(ctx);
+        let filepath = self.filepathbuf(ctx);
 
         if let Some(fstem) = filepath.file_stem() {
             Ok(fstem.to_owned())
@@ -43,7 +36,7 @@ impl FileTemplateValue {
     }
 
     fn file_extension(&self, ctx: &Context) -> Result {
-        let filepath = self.get_filepath(ctx);
+        let filepath = self.filepathbuf(ctx);
 
         // file extension
         if let Some(fext) = filepath.extension() {

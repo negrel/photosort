@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::result;
+use std::result::Result as StdResult;
 use std::str::FromStr;
+use std::{fs, io};
+
+use thiserror::Error;
 
 use super::variables;
 
@@ -37,21 +40,29 @@ impl Context {
     }
 }
 
-pub fn prepare_template_context(
-    ctx: &mut Context,
-    path: &Path,
-) -> result::Result<(), Box<dyn Error>> {
+#[derive(Error, Debug)]
+enum PrivateVariableError {
+    #[error("failed to canonicalize filepath: {0}")]
+    AbsoluteFilePath(#[from] io::Error),
+}
+
+pub fn prepare_template_context(ctx: &mut Context, path: &Path) -> StdResult<(), Box<dyn Error>> {
+    let abs_path = match fs::canonicalize(path) {
+        Ok(path) => path,
+        Err(err) => return Err(Box::new(PrivateVariableError::AbsoluteFilePath(err))),
+    };
+
     // Private variables starts with a ":"
     // :file.path is one of the most important private variable, it used
-    // by other template value to fetch filepath.
-    ctx.insert(&[":file.path"], Box::new(path.to_owned()));
+    // by other template value to fetch absolute filepath.
+    ctx.insert(&[":file.path"], Box::new(abs_path));
 
     variables::prepare_template_context(ctx)?;
 
     Ok(())
 }
 
-pub type Result = result::Result<OsString, Box<dyn Error>>;
+pub type Result = StdResult<OsString, Box<dyn Error>>;
 
 pub trait TemplateValue {
     fn render(&self, name: &str, ctx: &Context) -> Result;
