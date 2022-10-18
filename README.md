@@ -65,6 +65,17 @@ don't hesitate to make a PR !
 | `exif.date.month` | Month extracted from DateTime exif field. |
 | `exif.date.day` | Day extracted from DateTime exif field. |
 
+### Composed template variables
+
+The following composed template variables are available for now:
+
+| Variable | Source variables | Description |
+| :------- | :--------------- | :---------- |
+| `date` | `exif.date` -> `file.md.creation_date` | Date in RFC3339 format. |
+| `date.year` | `exif.date.year` -> `file.md.creation_date.year` | The full proleptic Gregorian year, zero-padded to 4 digits. |
+| `date.month` | `exif.date.month` -> `file.md.creation_date.month` | Month number (01–12), zero-padded to 2 digits. |
+| `date.day` | `exif.date.day` -> `file.md.creation_date.day` | Day number (01–31), zero-padded to 2 digits. |
+
 ## Contributing
 
 If you want to contribute to `photosort` to add a feature or improve the code contact
