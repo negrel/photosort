@@ -1,8 +1,8 @@
 use std::ffi::OsString;
-use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::string::FromUtf8Error;
+use std::{error, fmt};
 
 use serde::de::Visitor;
 use serde::Deserialize;
@@ -32,13 +32,16 @@ pub enum ParseError {
     UnclosedVariable(usize),
 }
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum RenderError {
     #[error("undefined variable {0:?}")]
     UndefinedVariable(String),
 
     #[error("failed to build string")]
     BuildString(#[from] FromUtf8Error),
+
+    #[error("failed to render \"{0}\" variable: {1}")]
+    VariableRender(String, #[source] Box<dyn error::Error>),
 }
 
 impl Template {
@@ -52,7 +55,13 @@ impl Template {
                 Token::String(str) => result.push(&str[..]),
                 Token::Variable(name) => {
                     if let Some(value) = ctx.get(name) {
-                        result.push(value.render(name, ctx));
+                        let rendered_value = match value.render(name, ctx) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                return Err(RenderError::VariableRender(name.to_owned(), err))
+                            }
+                        };
+                        result.push(rendered_value);
                     } else {
                         return Err(RenderError::UndefinedVariable(name.to_string()));
                     }
@@ -214,10 +223,16 @@ mod tests {
     fn undefined_variable_error() {
         let tpl = Template::from_str("i'm going to :destination: next year").unwrap();
         let result = tpl.render(&Context::default());
+        let render_err = result.unwrap_err();
 
-        assert_eq!(
-            result.unwrap_err(),
-            RenderError::UndefinedVariable("destination".to_string())
-        );
+        match render_err {
+            RenderError::UndefinedVariable(variable) => {
+                assert_eq!(variable, "destination".to_string())
+            }
+            _ => panic!(
+                "expected error of type UndefinedVariable, got {}",
+                render_err
+            ),
+        }
     }
 }

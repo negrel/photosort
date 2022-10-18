@@ -125,7 +125,7 @@ pub enum SortError {
     #[error("failed to setup template context: {0}")]
     TemplateContextError(#[from] Box<dyn Error>),
 
-    #[error("failed to render file path template: {0}")]
+    #[error("failed to render template: {0}")]
     TemplateError(#[source] template::RenderError),
 
     #[error("failed to replicate file to {1:?}: {0}")]
@@ -179,10 +179,12 @@ mod tests {
             _ => panic!("{} is not of type TemplateError", err),
         };
 
-        assert_eq!(
-            err,
-            template::RenderError::UndefinedVariable("inexistent.variable".to_owned()),
-        );
+        match err {
+            template::RenderError::UndefinedVariable(variable) => {
+                assert_eq!(variable, "inexistent.variable".to_string())
+            }
+            _ => panic!("expected error of type UndefinedVariable, got {}", err),
+        }
     }
 
     #[test]

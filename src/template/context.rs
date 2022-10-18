@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::result;
 use std::str::FromStr;
 
 use super::variables;
@@ -19,7 +20,9 @@ impl Context {
             None => return None,
         };
 
-        self.template_values.get(index.to_owned()).map(|v| v.as_ref())
+        self.template_values
+            .get(index.to_owned())
+            .map(|v| v.as_ref())
     }
 
     pub fn insert(&mut self, keys: &[&str], value: Box<dyn TemplateValue>) {
@@ -34,7 +37,10 @@ impl Context {
     }
 }
 
-pub fn prepare_template_context(ctx: &mut Context, path: &Path) -> Result<(), Box<dyn Error>> {
+pub fn prepare_template_context(
+    ctx: &mut Context,
+    path: &Path,
+) -> result::Result<(), Box<dyn Error>> {
     // Private variables starts with a ":"
     // :file.path is one of the most important private variable, it used
     // by other template value to fetch filepath.
@@ -45,36 +51,38 @@ pub fn prepare_template_context(ctx: &mut Context, path: &Path) -> Result<(), Bo
     Ok(())
 }
 
+pub type Result = result::Result<OsString, Box<dyn Error>>;
+
 pub trait TemplateValue {
-    fn render(&self, name: &str, ctx: &Context) -> OsString;
+    fn render(&self, name: &str, ctx: &Context) -> Result;
 }
 
 impl TemplateValue for dyn ToString {
-    fn render(&self, name: &str, ctx: &Context) -> OsString {
+    fn render(&self, name: &str, ctx: &Context) -> Result {
         self.to_string().render(name, ctx)
     }
 }
 
 impl TemplateValue for &str {
-    fn render(&self, name: &str, ctx: &Context) -> OsString {
+    fn render(&self, name: &str, ctx: &Context) -> Result {
         self.to_owned().to_owned().render(name, ctx)
     }
 }
 
 impl TemplateValue for String {
-    fn render(&self, _name: &str, _ctx: &Context) -> OsString {
-        OsString::from_str(self).unwrap()
+    fn render(&self, _name: &str, _ctx: &Context) -> Result {
+        Ok(OsString::from_str(self).unwrap())
     }
 }
 
 impl TemplateValue for PathBuf {
-    fn render(&self, _name: &str, _ctx: &Context) -> OsString {
-        self.clone().into_os_string()
+    fn render(&self, _name: &str, _ctx: &Context) -> Result {
+        Ok(self.clone().into_os_string())
     }
 }
 
 impl TemplateValue for OsString {
-    fn render(&self, _name: &str, _ctx: &Context) -> OsString {
-        self.clone()
+    fn render(&self, _name: &str, _ctx: &Context) -> Result {
+        Ok(self.clone())
     }
 }
