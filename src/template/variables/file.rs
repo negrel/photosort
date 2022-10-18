@@ -9,7 +9,7 @@ struct FileTemplateValue;
 
 impl FileTemplateValue {
     fn filepath(&self, ctx: &Context) -> Result {
-        ctx.get(":file.path").unwrap().render("", ctx)
+        ctx.get_or_err(":file.path")?.render("", ctx)
     }
 
     fn filepathbuf(&self, ctx: &Context) -> PathBuf {

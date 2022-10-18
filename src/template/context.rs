@@ -28,6 +28,11 @@ impl Context {
             .map(|v| v.as_ref())
     }
 
+    pub fn get_or_err(&self, key: &str) -> StdResult<&dyn TemplateValue, Box<dyn Error>> {
+        self.get(key)
+            .ok_or_else(|| missing_variable(key.to_string()))
+    }
+
     pub fn insert(&mut self, keys: &[&str], value: Box<dyn TemplateValue>) {
         assert!(!keys.is_empty());
 
@@ -60,6 +65,14 @@ pub fn prepare_template_context(ctx: &mut Context, path: &Path) -> StdResult<(),
     variables::prepare_template_context(ctx)?;
 
     Ok(())
+}
+
+pub fn missing_variable(name: String) -> Box<dyn Error> {
+    #[derive(Error, Debug)]
+    #[error("missing variable \"{0}\"")]
+    struct MissingVariableError(String);
+
+    Box::new(MissingVariableError(name))
 }
 
 pub type Result = StdResult<OsString, Box<dyn Error>>;
