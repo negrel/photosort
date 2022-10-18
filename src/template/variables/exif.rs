@@ -1,8 +1,9 @@
+use std::error::Error;
 use std::path::PathBuf;
-use std::result;
-use std::{error::Error, ffi::OsString};
+use std::result::Result as StdResult;
 
 use exif::{DateTime, Exif, In, Reader, Tag, Value};
+use thiserror::Error;
 
 use crate::template::context::{Context, Result, TemplateValue};
 
@@ -10,58 +11,58 @@ struct ExifTemplateValue {
     exif: Exif,
 }
 
+#[derive(Error, Debug)]
+enum ExifError {
+    #[error("failed to retrieve exif field \"{0}\"")]
+    MissingField(String),
+
+    #[error("expected field of type \"{0}\", got \"{1:?}\"")]
+    WrongType(String, Value),
+
+    #[error("failed to parse exif datetime")]
+    ParseDateTime(#[from] exif::Error),
+}
+
 impl ExifTemplateValue {
     pub fn new(exif: Exif) -> Self {
         Self { exif }
     }
 
-    fn datetime(&self) -> Option<DateTime> {
-        let field = self.exif.get_field(Tag::DateTime, In::PRIMARY);
-        let ascii = match field {
+    fn datetime(&self) -> StdResult<DateTime, ExifError> {
+        let ascii = match self.exif.get_field(Tag::DateTime, In::PRIMARY) {
             Some(f) => match &f.value {
                 Value::Ascii(ascii) => ascii
                     .iter()
                     .flatten()
                     .map(|v| v.to_owned())
                     .collect::<Vec<u8>>(),
-                &_ => return None,
+                &_ => return Err(ExifError::WrongType("ascii".to_owned(), f.value.to_owned())),
             },
-            None => return None,
+            None => return Err(ExifError::MissingField(Tag::DateTime.to_string())),
         };
 
-        match DateTime::from_ascii(ascii.as_slice()) {
-            Ok(datetime) => Some(datetime),
-            Err(_err) => None,
-        }
+        Ok(DateTime::from_ascii(ascii.as_slice())?)
     }
 
     fn date(&self) -> Result {
-        match self.datetime() {
-            // RFC3339
-            Some(date) => Ok(format!("{:04}-{:02}-{:02}", date.year, date.month, date.day).into()),
-            None => Ok(OsString::default()),
-        }
+        let date = self.datetime()?;
+        // RFC3339
+        Ok(format!("{:04}-{:02}-{:02}", date.year, date.month, date.day).into())
     }
 
     fn date_year(&self) -> Result {
-        match self.datetime() {
-            Some(date) => Ok(format!("{:04}", date.year).into()),
-            None => Ok(OsString::default()),
-        }
+        let date = self.datetime()?;
+        Ok(format!("{:04}", date.year).into())
     }
 
     fn date_month(&self) -> Result {
-        match self.datetime() {
-            Some(date) => Ok(format!("{:02}", date.month).into()),
-            None => Ok(OsString::default()),
-        }
+        let date = self.datetime()?;
+        Ok(format!("{:02}", date.month).into())
     }
 
     fn date_day(&self) -> Result {
-        match self.datetime() {
-            Some(date) => Ok(format!("{:02}", date.day).into()),
-            None => Ok(OsString::default()),
-        }
+        let date = self.datetime()?;
+        Ok(format!("{:02}", date.day).into())
     }
 }
 
@@ -77,7 +78,7 @@ impl TemplateValue for ExifTemplateValue {
     }
 }
 
-pub fn prepare_template_context(ctx: &mut Context) -> result::Result<(), Box<dyn Error>> {
+pub fn prepare_template_context(ctx: &mut Context) -> StdResult<(), Box<dyn Error>> {
     // get filepath private variables
     let filepath = ctx.get(":file.path").unwrap().render("", ctx)?;
     let filepath = PathBuf::from(filepath);
