@@ -56,6 +56,10 @@ don't hesitate to make a PR !
 | `file.name` | File name. |
 | `file.stem` | Extracts the stem (non-extension) portion of the filename. |
 | `file.extension` | Extracts the extension part of the filename. |
+| `file.md.creation_date` | File creation date in RFC3339 format. |
+| `file.md.creation_date.year` | Year extracted from file creation date. |
+| `file.md.creation_date.month` | Month extracted from file creation date. |
+| `file.md.creation_date.day` | Day extracted from file creation date. |
 | `exif.date` | Exif date in RFC3339 format. |
 | `exif.date.year` | Year extracted from DateTime exif field. |
 | `exif.date.month` | Month extracted from DateTime exif field. |
