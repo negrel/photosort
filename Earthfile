@@ -1,9 +1,10 @@
 VERSION 0.6
 FROM docker.io/library/rust:1.64
 WORKDIR /usr/src/photosort
-ARG CARGO_HOME="$PWD/.cargo"
 
 fetch:
+	# Fix OOM on arm
+	RUN printf "[net]\ngit-fetch-with-cli = true" >> $CARGO_HOME/config.toml
 	COPY Cargo.toml .
 	COPY Cargo.lock .
 	RUN cargo fetch --locked
