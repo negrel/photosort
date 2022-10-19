@@ -5,5 +5,5 @@ push:
 
 tag:
 	ARG tag="dev"
-	BUILD --platform=linux/amd64 --platform=linux/386 --platform=linux/arm64/v8 ../+build-image --release=y --tag="$tag"
+	BUILD --platform=linux/amd64 --platform=linux/386 --platform=linux/arm64/v8 ../+build-image --tag="$tag"
 

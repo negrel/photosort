@@ -27,8 +27,7 @@ build-release:
 
 build-image:
 	FROM docker.io/library/debian:bullseye
-	ARG release="n"
-	COPY (+build/bin --release="$release") /usr/local/bin/photosort
+	COPY (+build/bin --release=y) /usr/local/bin/photosort
 	COPY scripts/tags.sh /usr/local/bin/tags
 	ENTRYPOINT ["/usr/local/bin/photosort"]
 	CMD ["--help"]
