@@ -27,10 +27,11 @@ build-release:
 
 build-image:
 	FROM docker.io/library/debian:bullseye
+	COPY ./example_config.toml /etc/photosort.toml
 	COPY (+build/bin --release=y) /usr/local/bin/photosort
 	COPY scripts/tags.sh /usr/local/bin/tags
 	ENTRYPOINT ["/usr/local/bin/photosort"]
-	CMD ["--help"]
+	CMD ["watch", "-c", "/etc/photosort.toml"]
 	ARG prefix="negrel"
 	ARG tag="dev"
 	FOR t IN $(tags $tag) 
