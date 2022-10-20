@@ -6,14 +6,14 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
+use clap::builder::PossibleValue;
 use serde::de::Error;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use symlink::symlink_file;
 use thiserror::Error;
 
-#[derive(Serialize, Deserialize, Debug, clap::ValueEnum, Clone, Copy, PartialEq, Eq)]
-#[clap(rename_all = "lowercase")]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ReplicatorKind {
     #[serde(skip)]
@@ -21,6 +21,20 @@ pub enum ReplicatorKind {
     Copy,
     HardLink,
     SoftLink,
+}
+
+impl clap::ValueEnum for ReplicatorKind {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Copy, Self::HardLink, Self::SoftLink]
+    }
+    fn to_possible_value<'a>(&self) -> ::std::option::Option<PossibleValue> {
+        match self {
+            Self::Copy => Some(PossibleValue::new("copy")),
+            Self::HardLink => Some(PossibleValue::new("hardlink")),
+            Self::SoftLink => Some(PossibleValue::new("softlink")),
+            _ => None,
+        }
+    }
 }
 
 impl Display for ReplicatorKind {

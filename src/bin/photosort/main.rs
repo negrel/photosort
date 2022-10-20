@@ -111,21 +111,20 @@ fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
         }
         log::info!("daemon process started");
     }
-
     match watch_args.common {
         CliOrConfigArgs::Cli(args) => {
-            log::debug!("setting up sorter");
+            log::debug!("setting up config...");
             let cfg = config::Watch::from(args);
-            log::debug!("sorter successfully setted up");
+            log::debug!("config successfully setted up");
 
             watch(cfg);
         }
         CliOrConfigArgs::Config(args) => {
             log::debug!("reading config file...");
-            let result = match fs::read_to_string(&args.config) {
+            let result = match fs::read_to_string(&args.path) {
                 Ok(cfg_str) => toml::from_str(&cfg_str),
                 Err(err) => {
-                    log::error!("failed to read config file {:?}: {}", args.config, err);
+                    log::error!("failed to read config file {:?}: {}", args.path, err);
                     return 1;
                 }
             };
