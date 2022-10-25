@@ -1,7 +1,7 @@
 use std::{path::PathBuf, thread, time::Duration};
 
 use notify::{
-    event::{AccessKind, AccessMode, CreateKind},
+    event::{AccessKind, AccessMode, CreateKind, ModifyKind, RenameMode},
     Event, EventKind, RecursiveMode, Watcher,
 };
 use photosort::sort::{SortError, SortResult, Sorter};
@@ -86,28 +86,34 @@ impl EventHandler {
         &self,
         event: notify::Result<Event>,
     ) -> Result<EventHandlerResult, EventHandlerError> {
-        let event = match event {
+        let mut event = match event {
             Ok(e) => e,
             Err(err) => return Err(EventHandlerError::RetrieveEvent(err)),
         };
 
-        match event.kind {
-            EventKind::Access(AccessKind::Close(AccessMode::Write))
-            | EventKind::Create(CreateKind::File) => {
-                log::debug!("handling event: {:?}", event);
-                if let Err(filter_reason) = self.event_filter.filter(&event) {
-                    return Ok(EventHandlerResult::Filtered(filter_reason));
+        let src_path = match event.kind {
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                // If file is renamed and its previous name was filtered
+                if let Err(FilterReason::MatchIgnoreRegex(_)) = self.event_filter.filter(&event) {
+                    // remove the old name from the paths vector
+                    event.paths.remove(0);
                 }
 
-                let src_path = &event.paths[0];
-                let sort_result = self.sorter.sort_file(src_path);
-                log::debug!("event handled: {:?}", event);
-                Ok(EventHandlerResult::Sort(src_path.to_owned(), sort_result))
+                &event.paths[0]
             }
-            _ => {
-                Ok(EventHandlerResult::Ignored(event))
-            }
+            EventKind::Access(AccessKind::Close(AccessMode::Write))
+            | EventKind::Create(CreateKind::File) => &event.paths[0],
+            _ => return Ok(EventHandlerResult::Ignored(event)),
+        };
+
+        log::debug!("handling event: {:?}", event);
+        if let Err(filter_reason) = self.event_filter.filter(&event) {
+            return Ok(EventHandlerResult::Filtered(filter_reason));
         }
+
+        let sort_result = self.sorter.sort_file(src_path);
+        log::debug!("event handled: {:?}", event);
+        Ok(EventHandlerResult::Sort(src_path.to_owned(), sort_result))
     }
 }
 
