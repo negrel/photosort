@@ -1,4 +1,5 @@
 sources = ["/src"]
+ignore_regex = ".tmp$"
 replicator = ["hardlink", "softlink", "copy"]
 template = "/dst/:date.year:/:date.month:/:file.name:"
 overwrite = true

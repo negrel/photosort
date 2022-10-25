@@ -27,7 +27,7 @@ edition = "2021"
 log = "0.4.17"
 env_logger = "0.9"
 symlink = "0.1.0" # Cross-platform symlink
-serde = { version = "1.0.143", features = ["derive"] } # Serialization & deserialization
+serde = { version = "1.0.143", features = ["derive"] } # serialization & deserialization
 toml = "0.5"
 thiserror = "1.0"
 notify = "5.0"
@@ -35,6 +35,8 @@ clap = { version = "4.0", features = ["derive", "cargo"] }
 daemonize = "0.4.1"
 kamadak-exif = "0.5.4"
 chrono = "0.4.22" 
+regex = "1.6.0"
+serde_regex = "1.1.0"
 
 [dev-dependencies]
 uuid = { version = "1.1.2", features = ["v4"] }

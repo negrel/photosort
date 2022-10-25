@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{arg, builder::PathBufValueParser, Args, FromArgMatches, Parser, Subcommand};
+use regex::Regex;
 
 use crate::{ReplicatorKind, Template, TemplateParser};
 
@@ -28,9 +29,12 @@ pub struct CliArgs {
     #[arg(short, long, default_value = "false", conflicts_with = "ConfigArgs")]
     pub overwrite: bool,
 
-    /// How files are replicated in preference order.
+    /// Ignore source files that match this regular expression.
     #[arg(short, long, conflicts_with = "ConfigArgs")]
-    #[arg(default_values = ["hardlink", "softlink", "copy"])]
+    pub ignore_regex: Option<Regex>,
+
+    /// How files are replicated in preference order.
+    #[arg(short, long, conflicts_with = "ConfigArgs", default_values = ["hardlink", "softlink", "copy"] )]
     pub replicators: Vec<ReplicatorKind>,
 
     /// Destination file template.

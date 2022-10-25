@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use regex::Regex;
 use serde::Deserialize;
 
 use photosort::sort;
@@ -9,6 +10,9 @@ use crate::args::CliArgs;
 #[derive(Debug, Deserialize)]
 pub struct Watch {
     pub sources: Vec<PathBuf>,
+
+    #[serde(with = "serde_regex", default = "Option::default")]
+    pub ignore_regex: Option<Regex>,
 
     #[serde(flatten)]
     pub sorter: sort::Config,
@@ -24,6 +28,7 @@ impl From<CliArgs> for Watch {
 
         Self {
             sources: args.sources,
+            ignore_regex: args.ignore_regex,
             sorter,
         }
     }

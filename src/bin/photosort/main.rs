@@ -2,8 +2,6 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::process::exit;
-use std::thread;
-use std::time::Duration;
 
 use args::CliArgs;
 use args::CliOrConfigArgs;
@@ -12,10 +10,6 @@ use args::WatchCmd;
 use clap::Parser;
 use daemonize::Daemonize;
 use env_logger::Env;
-use notify::{
-    event::AccessKind, event::AccessMode, event::CreateKind, Event, EventKind, RecursiveMode,
-    Watcher,
-};
 
 use photosort::replicator::{Replicator, ReplicatorKind};
 use photosort::sort;
@@ -26,9 +20,14 @@ use photosort::template::Template;
 mod args;
 mod config;
 mod value_parser;
+mod watch;
 
 use args::Cli;
 use value_parser::TemplateParser;
+use watch::EventHandlerError;
+use watch::EventHandlerResult;
+use watch::EventWatcher;
+use watch::FilterReason;
 
 type ExitCode = i32;
 
@@ -55,7 +54,11 @@ fn sort_cmd(args: CliArgs) -> ExitCode {
         if src_path.is_dir() {
             exit_code += sort_dir(&sorter, &src_path);
         } else {
-            exit_code += log_result(sorter.sort_file(&src_path), &src_path);
+            let result = sorter.sort_file(&src_path);
+            if result.is_err() {
+                exit_code += 1;
+            }
+            log_sort_result(result, &src_path);
         }
     }
 
@@ -83,7 +86,12 @@ fn sort_dir(sorter: &Sorter, src_path: &Path) -> ExitCode {
                 if path.is_dir() {
                     exit_code += sort_dir(sorter, &path);
                 } else {
-                    exit_code += log_result(sorter.sort_file(&path), &path);
+                    let result = sorter.sort_file(&path);
+                    if result.is_err() {
+                        exit_code += 1;
+                    }
+
+                    log_sort_result(result, &path);
                 }
             }
             Err(err) => {
@@ -111,18 +119,18 @@ fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
         }
         log::info!("daemon process started");
     }
-    match watch_args.common {
+    let cfg = match watch_args.common {
         CliOrConfigArgs::Cli(args) => {
             log::debug!("setting up config...");
             let cfg = config::Watch::from(args);
             log::debug!("config successfully setted up");
 
-            watch(cfg);
+            cfg
         }
         CliOrConfigArgs::Config(args) => {
             log::debug!("reading config file...");
-            let result = match fs::read_to_string(&args.path) {
-                Ok(cfg_str) => toml::from_str(&cfg_str),
+            let cfg_str = match fs::read_to_string(&args.path) {
+                Ok(cfg_str) => cfg_str,
                 Err(err) => {
                     log::error!("failed to read config file {:?}: {}", args.path, err);
                     return 1;
@@ -130,7 +138,7 @@ fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
             };
             log::debug!("config file successfully read");
             log::debug!("deserializing config file...");
-            let cfg = match result {
+            let cfg = match toml::from_str(&cfg_str) {
                 Ok(cfg) => cfg,
                 Err(err) => {
                     log::error!("failed to deserialize config file: {}", err);
@@ -139,72 +147,48 @@ fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
             };
             log::debug!("config file successfully deserialized");
 
-            watch(cfg);
+            cfg
         }
     };
+
+    let result = EventWatcher::start(cfg, log_result);
+
+    match result {
+        Ok(_) => {}
+        Err(err) => {
+            log::error!("failed to start event watcher: {}", err);
+            return 1;
+        }
+    }
 
     0
 }
 
-pub fn watch(cfg: config::Watch) {
-    log::debug!("watching with config: {:?}", cfg);
-
-    let sorter = Sorter::new(cfg.sorter);
-
-    log::debug!("creating watcher suitable for this platform");
-    let result = notify::recommended_watcher(move |result| match result {
-        Ok(event) => handle_watch_event(event, &sorter),
-        Err(err) => log::error!("unexpected watch error occurred: {}", err),
-    });
-    let mut watcher = match result {
-        Ok(w) => w,
-        Err(err) => {
-            log::error!("failed to create fs watcher: {}", err);
-            return;
-        }
-    };
-    log::debug!("watcher successfully created");
-
-    log::debug!("adding sources to watcher watch list");
-    for src in cfg.sources {
-        log::debug!("adding {:?} to watch list", src);
-        match watcher.watch(&src, RecursiveMode::Recursive) {
-            Ok(_) => {}
-            Err(err) => {
-                log::error!("failed to add source {:?} to watch list: {}", src, err);
-                return;
+fn log_result(result: Result<EventHandlerResult, EventHandlerError>) {
+    match result {
+        Ok(res) => match res {
+            EventHandlerResult::Filtered(reason) => log_filtered(reason),
+            EventHandlerResult::Sort(src_path, result) => log_sort_result(result, &src_path),
+            EventHandlerResult::Ignored(event) => log::debug!("ignored event: {:?}", event),
+        },
+        Err(err) => match err {
+            EventHandlerError::RetrieveEvent(err) => {
+                log::error!("failed to retrieve fs event: {}", err)
             }
-        }
-    }
-    log::debug!("sources successfully added to watcher watch list");
-
-    loop {
-        thread::sleep(Duration::from_secs(60));
+        },
     }
 }
 
-fn handle_watch_event(event: Event, sorter: &Sorter) {
-    match event.kind {
-        EventKind::Access(AccessKind::Close(AccessMode::Write))
-        | EventKind::Create(CreateKind::File) => {
-            log::debug!("handling event: {:?}", event);
-            if event.paths.is_empty() {
-                panic!("event paths is empty: ${:?}", event);
-            }
-
-            let src_path = &event.paths[0];
-            log_result(sorter.sort_file(src_path), src_path);
+fn log_filtered(reason: FilterReason) {
+    match reason {
+        FilterReason::MissingEventPath(event) => {
+            log::error!("missing file path in event: {:?}", event)
         }
-        _ => {
-            log::debug!("ignoring event {:?}", event);
-            return;
-        }
+        FilterReason::MatchIgnoreRegex(path) => log::info!("{:?} matched ignore regex", path),
     }
-
-    log::debug!("event handled: {:?}", event);
 }
 
-fn log_result(result: sort::Result, src_path: &Path) -> ExitCode {
+fn log_sort_result(result: sort::Result, src_path: &Path) {
     log::debug!("{:?}: {:?}", src_path, result);
 
     match result {
@@ -238,7 +222,6 @@ fn log_result(result: sort::Result, src_path: &Path) -> ExitCode {
                     )
                 }
             };
-            0
         }
         Err(err) => {
             match err {
@@ -253,7 +236,6 @@ fn log_result(result: sort::Result, src_path: &Path) -> ExitCode {
                     log::error!("{:?} -x- {:?}: {}", src_path, replicate_path, err);
                 }
             };
-            1
         }
     }
 }
