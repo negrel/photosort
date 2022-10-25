@@ -10,7 +10,7 @@ struct Date {}
 impl Date {
     fn get_one_of(&self, ctx: &Context, keys: &[&str]) -> Result {
         #[derive(Debug, Error)]
-        #[error("failed to get and render any of the following variable: {0:?}")]
+        #[error("failed to get or render any of the following variables: {0:?}")]
         struct GetOneOfErr(Vec<String>);
 
         for key in keys {
