@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use super::variables;
 
+/// Context define the rendering context of a Template. It contains template value.
 #[derive(Default)]
 pub struct Context {
     variables: HashMap<String, usize>,
@@ -77,6 +78,10 @@ pub fn missing_variable(name: String) -> Box<dyn Error> {
 
 pub type Result = StdResult<OsString, Box<dyn Error>>;
 
+/// TemplateValue defines a value used in the rendering of a [`Template`].
+/// It should be stateless and reusable.
+/// [`render()`] takes a `name` parameter because a [`TemplateValue`]
+/// can be stored multiple times in a [`Context`] with different keys.
 pub trait TemplateValue {
     fn render(&self, name: &str, ctx: &Context) -> Result;
 }

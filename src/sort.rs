@@ -31,6 +31,9 @@ impl Config {
     }
 }
 
+/// Sorter define a file sorter.
+///
+/// Sorter render a path template before replicating the file.
 #[derive(Debug)]
 pub struct Sorter {
     cfg: Config,

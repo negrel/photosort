@@ -68,6 +68,7 @@ impl FromStr for ReplicatorKind {
     }
 }
 
+/// Replicator represents a way to replicate a file.
 pub trait Replicator: Send + Sync {
     fn replicate(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn kind(&self) -> ReplicatorKind;

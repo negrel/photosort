@@ -13,6 +13,10 @@ pub mod variables;
 
 use context::Context;
 
+/// Template define a simple PathBuf template engine.
+///
+/// Template is a template engine that only supports variable substitution (no branching, loop,
+/// etc). It makes uses of Context to get and render variables (implementing []).
 #[derive(Debug, Clone)]
 pub struct Template {
     tokens: Vec<Token>,
