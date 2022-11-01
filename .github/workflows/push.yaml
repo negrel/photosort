@@ -8,6 +8,7 @@ on:
       - "README.md"
 jobs:
   push:
+    if: "! contains(github.ref, 'refs/tags/')"
     runs-on: ubuntu-latest
     steps:
       - name: Install earthly
