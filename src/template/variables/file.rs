@@ -236,13 +236,14 @@ mod test {
         );
         assert_eq!(
             DATE_REGEX
-                .find("picture22022-11-01-0000.jpg")
+                .find("picture02022-11-01-0000.jpg")
                 .unwrap()
                 .as_str(),
             "2022-11-01"
         );
 
         assert!(DATE_REGEX.find("picture-22-11-01-0000.jpg").is_none());
+        assert!(DATE_REGEX.find("picture-022-11-01-0000.jpg").is_none());
     }
 
     #[test]
@@ -301,10 +302,11 @@ mod test {
         );
         assert_eq!(
             DATE_REGEX
-                .find("picture-202212310000.jpg")
+                .find("picture-20221231_0000.jpg")
                 .unwrap()
                 .as_str(),
             "20221231"
         );
+        assert_eq!(DATE_REGEX.find("picture-202212310000").unwrap().as_str(), "20221231")
     }
 }
