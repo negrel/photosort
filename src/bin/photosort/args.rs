@@ -26,23 +26,23 @@ pub enum Command {
 #[derive(Args, Debug)]
 pub struct CliArgs {
     /// Overwrite destination file if it already exists
-    #[arg(short, long, default_value = "false", conflicts_with = "ConfigArgs")]
+    #[arg(short, long, default_value = "false")]
     pub overwrite: bool,
 
     /// Ignore source files that match this regular expression.
-    #[arg(short, long, conflicts_with = "ConfigArgs")]
+    #[arg(short, long)]
     pub ignore_regex: Option<Regex>,
 
     /// How files are replicated in preference order.
-    #[arg(short, long, conflicts_with = "ConfigArgs", default_values = ["hardlink", "softlink", "copy"] )]
+    #[arg(short, long, default_values = ["hardlink", "softlink", "copy"] )]
     pub replicators: Vec<ReplicatorKind>,
 
     /// Destination file template.
-    #[arg(value_parser = TemplateParser::default(), conflicts_with = "ConfigArgs")]
+    #[arg(value_parser = TemplateParser::default())]
     pub template: Template,
 
     /// Sources files/directories to replicates.
-    #[arg(value_parser = PathBufValueParser::default(), conflicts_with = "ConfigArgs")]
+    #[arg(value_parser = PathBufValueParser::default())]
     pub sources: Vec<PathBuf>,
 }
 
