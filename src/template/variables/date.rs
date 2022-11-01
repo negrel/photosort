@@ -29,19 +29,43 @@ impl Date {
     }
 
     fn date(&self, ctx: &Context) -> Result {
-        self.get_one_of(ctx, &["exif.date", "file.md.creation_date"])
+        self.get_one_of(
+            ctx,
+            &["exif.date", "file.name.date", "file.md.creation_date"],
+        )
     }
 
     fn date_year(&self, ctx: &Context) -> Result {
-        self.get_one_of(ctx, &["exif.date.year", "file.md.creation_date.year"])
+        self.get_one_of(
+            ctx,
+            &[
+                "exif.date.year",
+                "file.name.date.year",
+                "file.md.creation_date.year",
+            ],
+        )
     }
 
     fn date_month(&self, ctx: &Context) -> Result {
-        self.get_one_of(ctx, &["exif.date.month", "file.md.creation_date.month"])
+        self.get_one_of(
+            ctx,
+            &[
+                "exif.date.month",
+                "file.name.date.month",
+                "file.md.creation_date.month",
+            ],
+        )
     }
 
     fn date_day(&self, ctx: &Context) -> Result {
-        self.get_one_of(ctx, &["exif.date.day", "file.md.creation_date.day"])
+        self.get_one_of(
+            ctx,
+            &[
+                "exif.date.day",
+                "file.name.date.day",
+                "file.md.creation_date.day",
+            ],
+        )
     }
 }
 

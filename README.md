@@ -56,6 +56,10 @@ don't hesitate to make a PR !
 | `file.name` | File name. |
 | `file.stem` | Extracts the stem (non-extension) portion of the filename. |
 | `file.extension` | Extracts the extension part of the filename. |
+| `file.name.date` | Parse RFC3339 date from filename (with optional separator: `-` `_`) |
+| `file.name.date.year` | Year extracted from filename. |
+| `file.name.date.month` | Month extracted from filename. |
+| `file.name.date.day` | Day extracted from filename. |
 | `file.md.creation_date` | File creation date in RFC3339 format. |
 | `file.md.creation_date.year` | Year extracted from file creation date. |
 | `file.md.creation_date.month` | Month extracted from file creation date. |
@@ -71,10 +75,10 @@ The following composed template variables are available for now:
 
 | Variable | Source variables | Description |
 | :------- | :--------------- | :---------- |
-| `date` | `exif.date` -> `file.md.creation_date` | Date in RFC3339 format. |
-| `date.year` | `exif.date.year` -> `file.md.creation_date.year` | The full proleptic Gregorian year, zero-padded to 4 digits. |
-| `date.month` | `exif.date.month` -> `file.md.creation_date.month` | Month number (01–12), zero-padded to 2 digits. |
-| `date.day` | `exif.date.day` -> `file.md.creation_date.day` | Day number (01–31), zero-padded to 2 digits. |
+| `date` | `exif.date` -> `file.name.date` -> `file.md.creation_date` | Date in RFC3339 format. |
+| `date.year` | `exif.date.year` -> `file.name.date.year` -> `file.md.creation_date.year` | The full proleptic Gregorian year, zero-padded to 4 digits. |
+| `date.month` | `exif.date.month` -> `file.name.date.month` -> `file.md.creation_date.month` | Month number (01–12), zero-padded to 2 digits. |
+| `date.day` | `exif.date.day` -> `file.name.date.day` -> `file.md.creation_date.day` | Day number (01–31), zero-padded to 2 digits. |
 
 ## Contributing
 
