@@ -24,21 +24,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.17"
+log = "0.4"
 env_logger = "0.9"
-symlink = "0.1.0" # Cross-platform symlink
-serde = { version = "1.0.143", features = ["derive"] } # serialization & deserialization
+symlink = "0.1" # Cross-platform symlink
+serde = { version = "1.0", features = ["derive"] } # serialization & deserialization
 toml = "0.5"
 thiserror = "1.0"
 notify = "5.0"
 clap = { version = "4.0", features = ["derive", "cargo"] }
-daemonize = "0.4.1"
-kamadak-exif = "0.5.4"
-chrono = "0.4.22" 
-regex = "1.6.0"
-serde_regex = "1.1.0"
-lazy_static = "1.4.0"
+daemonize = "0.4"
+kamadak-exif = "0.5"
+chrono = "0.4"
+regex = "1.6"
+serde_regex = "1.1"
+lazy_static = "1.4"
 
 [dev-dependencies]
-uuid = { version = "1.1.2", features = ["v4"] }
+uuid = { version = "1.1", features = ["v4"] }
 
