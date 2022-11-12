@@ -26,23 +26,23 @@ pub enum Command {
 #[derive(Args, Debug)]
 pub struct CliArgs {
     /// Overwrite destination file if it already exists
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long, default_value = "false", group = "CliArgs")]
     pub overwrite: bool,
 
     /// Ignore source files that match this regular expression.
-    #[arg(short, long)]
+    #[arg(short, long, group = "CliArgs")]
     pub ignore_regex: Option<Regex>,
 
     /// How files are replicated in preference order.
-    #[arg(short, long, default_values = ["hardlink", "softlink", "copy"] )]
+    #[arg(short, long, default_values = ["hardlink", "softlink", "copy"], group = "CliArgs")]
     pub replicators: Vec<ReplicatorKind>,
 
     /// Destination file template.
-    #[arg(value_parser = TemplateParser::default())]
+    #[arg(value_parser = TemplateParser::default(), group = "CliArgs")]
     pub template: Template,
 
     /// Sources files/directories to replicates.
-    #[arg(value_parser = PathBufValueParser::default())]
+    #[arg(value_parser = PathBufValueParser::default(), group = "CliArgs")]
     pub sources: Vec<PathBuf>,
 }
 
@@ -52,7 +52,11 @@ pub struct ConfigArgs {
     #[arg(
         short = 'c',
         long = "config",
-        conflicts_with = "CliArgs",
+        conflicts_with = "overwrite",
+        conflicts_with = "ignore_regex",
+        conflicts_with = "replicators",
+        conflicts_with = "template",
+        conflicts_with = "sources",
         required = false
     )]
     pub path: PathBuf,
@@ -75,10 +79,9 @@ impl FromArgMatches for CliOrConfigArgs {
     }
 
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
-        if matches.get_one::<PathBuf>("path").is_some() {
-            ConfigArgs::from_arg_matches(matches).map(|_| ())
-        } else {
-            CliArgs::from_arg_matches(matches).map(|_| ())
+        match self {
+            Self::Cli(cli) => cli.update_from_arg_matches(matches),
+            Self::Config(cfg) => cfg.update_from_arg_matches(matches),
         }
     }
 }
@@ -90,13 +93,12 @@ impl Args for CliOrConfigArgs {
     }
 
     fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
-        let cmd = CliArgs::augment_args(cmd);
+        let cmd = CliArgs::augment_args_for_update(cmd);
         ConfigArgs::augment_args_for_update(cmd)
     }
 }
 
 #[derive(Args, Debug)]
-#[command(author, version, about)]
 pub struct WatchCmd {
     #[command(flatten)]
     pub common: CliOrConfigArgs,
