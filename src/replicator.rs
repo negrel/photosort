@@ -172,23 +172,15 @@ impl<'de> Deserialize<'de> for Box<dyn Replicator> {
     }
 }
 
+#[derive(Debug)]
 pub struct ReplicatorWithFallback {
     inner: Box<dyn Replicator>,
     fallback: Box<dyn Replicator>,
-    on_error: Option<Box<dyn Fn(io::Error) + Send + Sync>>,
 }
 
 impl ReplicatorWithFallback {
     pub fn new(inner: Box<dyn Replicator>, fallback: Box<dyn Replicator>) -> Self {
-        Self {
-            inner,
-            fallback,
-            on_error: None,
-        }
-    }
-
-    pub fn set_error_handler(&mut self, f: Box<dyn Fn(io::Error) + Send + Sync>) {
-        self.on_error = Some(f);
+        Self { inner, fallback }
     }
 }
 
@@ -197,10 +189,14 @@ impl Replicator for ReplicatorWithFallback {
         match self.inner.replicate(src, dst) {
             Ok(_) => Ok(()),
             Err(err) => {
-                if let Some(err_handler) = &self.on_error {
-                    err_handler(err);
+                if let Err(fallback_err) = self.fallback.replicate(src, dst) {
+                    Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        ReplicatorFallbackError(self.kind().to_string(), err, fallback_err),
+                    ))
+                } else {
+                    Ok(())
                 }
-                self.fallback.replicate(src, dst)
             }
         }
     }
@@ -218,6 +214,10 @@ impl Display for ReplicatorWithFallback {
         Ok(())
     }
 }
+
+#[derive(Debug, Error)]
+#[error("{0} replicator: {1}, {2}")]
+struct ReplicatorFallbackError(String, io::Error, io::Error);
 
 #[derive(Debug, Default)]
 pub struct NoneReplicator {}
