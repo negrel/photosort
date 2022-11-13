@@ -59,9 +59,8 @@ impl Sorter {
     }
 
     fn replicate_file(&self, src_path: &Path, replicate_path: PathBuf) -> Result {
-        // TODO canonicalize src and replicate path
         if replicate_path == src_path {
-            return Ok(SortResult::Skipped {
+           return Ok(SortResult::Skipped {
                 replicate_path,
                 reason: SkippedReason::SameFile,
             });

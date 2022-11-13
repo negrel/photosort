@@ -58,7 +58,7 @@ fn sort_cmd(args: CliArgs) -> ExitCode {
             if result.is_err() {
                 exit_code += 1;
             }
-            log_sort_result(result, &src_path);
+            log_sort_result(&result, &src_path);
         }
     }
 
@@ -86,12 +86,7 @@ fn sort_dir(sorter: &Sorter, src_path: &Path) -> ExitCode {
                 if path.is_dir() {
                     exit_code += sort_dir(sorter, &path);
                 } else {
-                    let result = sorter.sort_file(&path);
-                    if result.is_err() {
-                        exit_code += 1;
-                    }
-
-                    log_sort_result(result, &path);
+                    exit_code += sort_file(sorter, &path);
                 }
             }
             Err(err) => {
@@ -102,6 +97,24 @@ fn sort_dir(sorter: &Sorter, src_path: &Path) -> ExitCode {
     }
 
     exit_code
+}
+
+fn sort_file(sorter: &Sorter, src_path: &Path) -> ExitCode {
+    let abs_path = match fs::canonicalize(src_path) {
+        Ok(path) => path,
+        Err(err) => {
+            log::error!("failed to canonicalize source path {:?}: {}", src_path, err);
+            return 1;
+        }
+    };
+
+    let result = sorter.sort_file(&abs_path);
+    log_sort_result(&result, &abs_path);
+    if result.is_err() {
+        1
+    } else {
+        0
+    }
 }
 
 fn watch_cmd(watch_args: WatchCmd) -> ExitCode {
@@ -168,7 +181,7 @@ fn log_result(result: Result<EventHandlerResult, EventHandlerError>) {
     match result {
         Ok(res) => match res {
             EventHandlerResult::Filtered(reason) => log_filtered(reason),
-            EventHandlerResult::Sort(src_path, result) => log_sort_result(result, &src_path),
+            EventHandlerResult::Sort(src_path, result) => log_sort_result(&result, &src_path),
             EventHandlerResult::Ignored(event) => log::debug!("ignored event: {:?}", event),
         },
         Err(err) => match err {
@@ -188,7 +201,7 @@ fn log_filtered(reason: FilterReason) {
     }
 }
 
-fn log_sort_result(result: sort::Result, src_path: &Path) {
+fn log_sort_result(result: &sort::Result, src_path: &Path) {
     log::debug!("{:?}: {:?}", src_path, result);
 
     match result {
